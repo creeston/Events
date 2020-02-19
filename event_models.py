@@ -2,6 +2,35 @@ from typing import List
 import datetime
 
 
+def date_time_to_json(dt):
+    if type(dt) == datetime.datetime:
+        return {
+            "year": dt.year,
+            "month": dt.month,
+            "day": dt.day,
+            "hour": dt.hour,
+            "minute": dt.minute
+        }
+    else:
+        if type(dt) == list:
+            print("")
+        return {
+            "year": dt.year,
+            "month": dt.month,
+            "day": dt.day
+        }
+
+
+def date_to_json(dt: datetime.date):
+    if not dt:
+        return None
+    return {
+        "year": dt.year,
+        "month": dt.month,
+        "day": dt.day,
+    }
+
+
 class EventPlace:
     def __init__(self, place_name, place_address, place_url):
         self.place_name = place_name
@@ -11,45 +40,78 @@ class EventPlace:
     def __str__(self):
         return self.place_name
 
+    def to_json(self):
+        return {
+            "name": self.place_name,
+            "address": self.place_address,
+            "url": self.place_url
+        }
 
-class DateRange:
-    def __init__(self, start_day, end_date):
+
+class EventDateRange:
+    def __init__(self, start_day, end_date, week_schedule):
         self.start_day = start_day
         self.end_day = end_date
+        self.week_schedule = week_schedule
 
     def __str__(self):
         return "from %s to %s" % (self.start_day, self.end_day)
 
+    def to_json(self):
+        return {
+            "start": date_to_json(self.start_day),
+            "end":  date_to_json(self.end_day),
+            "schedule": self.week_schedule
+        }
 
-class TutByEvent:
-    def __init__(self, title: str, place: EventPlace, date: str,
-                 times: List[datetime.time], description: str,
-                 tags: List[str], category: str, link: str, is_free: bool, image_url: str):
+
+class Event:
+    def __init__(self, title: str, short_description: str, poster: str, description: str, place: EventPlace,
+                 event_type: str, event_tags: List[str], event_metadata, event_dates, source: str):
         self.title = title
-        self.place = place
-        self.times = times
+        self.short_description = short_description
+        self.poster = poster
         self.description = description
-        self.tags = tags
-        self.link = link
-        self.date = date
-        self.category = category
-        self.is_free = is_free
-        self.image_url = image_url
+        self.place = place
+        self.event_type = event_type
+        self.event_tags = event_tags
+        self.event_metadata = event_metadata
+        self.event_dates = event_dates
+        if type(self.event_dates[0]) == list:
+            print("")
+        self.source = source
+
+    def to_json(self):
+        result = {
+            "title": self.title,
+            "short_description": self.short_description,
+            "description": self.description,
+            "poster": self.poster,
+            "url": self.source,
+            "place": self.place.to_json(),
+            "type": self.event_type,
+            "tags": self.event_tags,
+            "metadata": self.event_metadata,
+        }
+
+        if type(self.event_dates[0]) == EventDateRange:
+            result["dates"] = [d.to_json() for d in self.event_dates]
+        else:
+            result["dates"] = [date_time_to_json(dt) for dt in self.event_dates]
+
+        return result
 
     def __str__(self):
         result = [
-            self.image_url,
-            "%s - %s (%s)" % (self.place, self.title, self.category),
-            self.date]
-        if self.tags:
-            result.append("(%s)" % ",".join(self.tags))
+            self.poster,
+            "%s - %s (%s)" % (self.place, self.title, self.event_type)]
+        if self.event_tags:
+            result.append("(%s)" % ",".join(self.event_tags))
         if self.description:
-            result.append("\n".join([str(t) for t in self.description if t]).strip())
-        for time in self.times:
+            result.append(self.description)
+        for time in self.event_dates:
             result.append(str(time))
-        result.append(self.link)
-        if self.is_free:
-            result.append("<FREE>")
+        result.append(self.source)
         return "\n".join(result)
 
 
@@ -57,6 +119,7 @@ class CityDogScheduleElement:
     def __init__(self, place, date: str, time: str):
         self.place = place
         self.date = date
+        self.time = time
 
     def __str__(self):
         return "%s - %s" % (str(self.place), self.date)
