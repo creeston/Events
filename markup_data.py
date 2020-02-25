@@ -10,7 +10,7 @@ textArea.pack()
 
 
 processed = 0
-lines = list(set(open('raw', encoding="utf-8").readlines()))
+lines = list(set(open('data/raw', encoding="utf-8").readlines()))
 events = []
 not_events = []
 lines_iter = iter(lines)
@@ -37,9 +37,9 @@ def add_not_event():
 
 
 def on_closing():
-    open('raw', 'w', encoding="utf-8").writelines(lines[processed:])
+    open('data/raw', 'w', encoding="utf-8").writelines(lines[processed:])
     open("events", "a", encoding="utf-8").writelines(events)
-    open("not_events", "a", encoding="utf-8").writelines(not_events)
+    open("data/not_events", "a", encoding="utf-8").writelines(not_events)
     root.destroy()
 
 

@@ -12,8 +12,6 @@ def date_time_to_json(dt):
             "minute": dt.minute
         }
     else:
-        if type(dt) == list:
-            print("")
         return {
             "year": dt.year,
             "month": dt.month,
@@ -49,7 +47,7 @@ class EventPlace:
 
 
 class EventDateRange:
-    def __init__(self, start_day, end_date, week_schedule):
+    def __init__(self, start_day, end_date, week_schedule=None):
         self.start_day = start_day
         self.end_day = end_date
         self.week_schedule = week_schedule
@@ -67,19 +65,21 @@ class EventDateRange:
 
 class Event:
     def __init__(self, title: str, short_description: str, poster: str, description: str, place: EventPlace,
-                 event_type: str, event_tags: List[str], event_metadata, event_dates, source: str):
+                 event_tags: List[str], event_dates, source: str,
+                 registration_info=None, info=None, age_restriction=None, cost=None):
         self.title = title
         self.short_description = short_description
         self.poster = poster
         self.description = description
         self.place = place
-        self.event_type = event_type
-        self.event_tags = event_tags
-        self.event_metadata = event_metadata
+        self.event_tags = list(set(event_tags))
         self.event_dates = event_dates
-        if type(self.event_dates[0]) == list:
-            print("")
         self.source = source
+        self.registration_info = registration_info
+        # number or url
+        self.info = info
+        self.age_restriction = age_restriction
+        self.cost = cost
 
     def to_json(self):
         result = {
@@ -89,22 +89,26 @@ class Event:
             "poster": self.poster,
             "url": self.source,
             "place": self.place.to_json(),
-            "type": self.event_type,
             "tags": self.event_tags,
-            "metadata": self.event_metadata,
+            "age": self.age_restriction,
+            "registration": self.registration_info,
+            "info": self.info,
+            "cost": self.cost,
+            "dates": []
         }
 
-        if type(self.event_dates[0]) == EventDateRange:
-            result["dates"] = [d.to_json() for d in self.event_dates]
-        else:
-            result["dates"] = [date_time_to_json(dt) for dt in self.event_dates]
+        for d in self.event_dates:
+            if type(d) == EventDateRange:
+                result["dates"].append(d.to_json())
+            else:
+                result["dates"].append(date_time_to_json(d))
 
         return result
 
     def __str__(self):
         result = [
             self.poster,
-            "%s - %s (%s)" % (self.place, self.title, self.event_type)]
+            "%s - %s" % (self.place, self.title,)]
         if self.event_tags:
             result.append("(%s)" % ",".join(self.event_tags))
         if self.description:

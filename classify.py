@@ -4,7 +4,7 @@ from sklearn import svm
 import matplotlib.pyplot as plt
 
 events = list(set(open('events', encoding="utf-8").readlines()))
-not_events = list(set(open('not_events', encoding="utf-8").readlines()))
+not_events = list(set(open('data/not_events', encoding="utf-8").readlines()))
 
 event_lengths = [len(e.split(' ')) for e in events]
 plt.hist(event_lengths, bins=20)
