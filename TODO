@@ -10,7 +10,7 @@
 
     extract people names
     citydog: "дата + ДЕДЛАЙН на полной странице (https://citydog.by/vedy/event/adukacyynaya-pragrama/)"
-    remove "РЕПОСТ"-related sentences, hashtags, "ПОДПИШИСЬ"
+    remove "РЕПОСТ"-related sentences, hashtags, "ПОДПИШИСЬ", О событии
 
 2. Event / Not event classifier
     2.1 Prepare corpus of event texts and not event texts ( IN PROGRESS )

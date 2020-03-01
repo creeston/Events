@@ -1,3 +1,5 @@
 vk_config.v2.json
 vcs.xml
 *.pyc
+.ipynb_checkpoints/
+.idea/misc.xml

@@ -1,4 +1,13 @@
 import tkinter as tk
+from event_fetchers import TelegramEventFetcher
+from classify import EventNotEventClassifier, TextPreprocessor
+
+preprocessor = TextPreprocessor()
+preprocessor.load_vocab("training\\vocab")
+fetcher = TelegramEventFetcher()
+is_event_classifier = EventNotEventClassifier(preprocessor)
+is_event_classifier.load_model("training\\is_event_classifier")
+
 
 root = tk.Tk()
 root.geometry("600x500")
@@ -10,7 +19,7 @@ textArea.pack()
 
 
 processed = 0
-lines = list(set(open('data/raw', encoding="utf-8").readlines()))
+lines = list(set(open('data/raw_events', encoding="utf-8").readlines())) #[preprocessor.preprocess_text(e) for e in fetcher.fetch_events() if not is_event_classifier.is_event(e)]
 events = []
 not_events = []
 lines_iter = iter(lines)
@@ -22,24 +31,30 @@ def add_event():
     global line
     global processed
     events.append(line)
-    line = next(lines_iter)
-    processed += 1
-    textVar.set(line)
+    try:
+        line = next(lines_iter)
+        processed += 1
+        textVar.set(line)
+    except:
+        textVar.set("end")
 
 
 def add_not_event():
     global line
     global processed
     not_events.append(line)
-    line = next(lines_iter)
-    processed += 1
-    textVar.set(line)
+    try:
+        line = next(lines_iter)
+        processed += 1
+        textVar.set(line)
+    except:
+        textVar.set("end")
 
 
 def on_closing():
-    open('data/raw', 'w', encoding="utf-8").writelines(lines[processed:])
-    open("events", "a", encoding="utf-8").writelines(events)
-    open("data/not_events", "a", encoding="utf-8").writelines(not_events)
+    open('data\\raw_events', 'w', encoding="utf-8").writelines(lines[processed:])
+    open("data\\events", "a", encoding="utf-8").writelines(events)
+    open("data\\not_events", "a", encoding="utf-8").writelines(not_events)
     root.destroy()
 
 
