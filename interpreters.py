@@ -101,9 +101,12 @@ class DateInterpreter:
             start, end = span
             schedule_string = schedule_string[:start] + "TIME_RANGE" + schedule_string[end:]
 
-        if any(c.isdigit() for c in schedule_string):
-            return DateInterpreter._get_date_relax_schedule(schedule_string, time_ranges)
-        return DateInterpreter._get_week_relax_schedule(schedule_string, time_ranges)
+        try:
+            if any(c.isdigit() for c in schedule_string):
+                return DateInterpreter._get_date_relax_schedule(schedule_string, time_ranges)
+            return DateInterpreter._get_week_relax_schedule(schedule_string, time_ranges)
+        except Exception as e:
+            print(e)
 
     @staticmethod
     def _get_week_relax_schedule(schedule_string, time_ranges):
@@ -333,6 +336,7 @@ class TagMapper:
         elif value in mapping["types"]:
             mapped = mapping["types"][value]
         else:
+            return value
             raise Exception("Mapping was not found for %s" % value)
         return mapped.split(',')
 

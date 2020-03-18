@@ -66,7 +66,7 @@ class EventDateRange:
 class Event:
     def __init__(self, title: str, short_description: str, poster: str, description: str, place: EventPlace,
                  event_tags: List[str], event_dates, source: str,
-                 registration_info=None, info=None, age_restriction=None, cost=None):
+                 registration_info=None, info=None, age_restriction=None, cost=None, raw_dates=None):
         self.title = title
         self.short_description = short_description
         self.poster = poster
@@ -81,6 +81,8 @@ class Event:
         self.age_restriction = age_restriction
         self.cost = cost
 
+        self.raw_dates = raw_dates
+
     def to_json(self):
         result = {
             "title": self.title,
@@ -94,7 +96,8 @@ class Event:
             "registration": self.registration_info,
             "info": self.info,
             "cost": self.cost,
-            "dates": []
+            "dates": [],
+            "raw_dates": self.raw_dates
         }
 
         for d in self.event_dates:
