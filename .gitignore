@@ -3,3 +3,4 @@ vcs.xml
 *.pyc
 .ipynb_checkpoints/
 .idea/misc.xml
+anon.session

@@ -11,6 +11,15 @@
     extract people names
     citydog: "дата + ДЕДЛАЙН на полной странице (https://citydog.by/vedy/event/adukacyynaya-pragrama/)"
     remove "РЕПОСТ"-related sentences, hashtags, "ПОДПИШИСЬ", О событии
+    TG >
+    Remove Фото и видео from tutby
+	
+	markup the data
+	build LSTM with tensorflow2
+	get places from google place api
+	
+	build address markup
+
 
 2. Event / Not event classifier
     2.1 Prepare corpus of event texts and not event texts ( IN PROGRESS )
@@ -40,3 +49,6 @@
         7.1.2 by date
         7.1.3 by range
         7.1.4 by geo location
+
+
+
