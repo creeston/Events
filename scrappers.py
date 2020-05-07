@@ -381,7 +381,7 @@ class CityDogScrapper:
     mapper = TagMapper()
 
     def list_events(self):
-        print("List events from Relax")
+        print("List events from citydog.by")
         self.listed_events = []
         for event in self.list_afisha_events():
             yield event
@@ -405,7 +405,11 @@ class CityDogScrapper:
             date_string = self._get_vedy_date(header_element)
             dates = DateInterpreter.parse_citydog_date(date_string)
             date_string = date_string.replace("   |   ", " в ")
-            place = self._get_places(header_element)[0]
+            places = self._get_places(header_element)
+            if len(places) > 0:
+                place = places[0]
+            else:
+                place = EventPlace("", "", "")
             event_source, event_cost, register_link = self._get_event_additional_info(header_element)
             full_description = self._get_full_description(description_element)
             tags = self._get_vedy_tags(description_element)
@@ -903,6 +907,8 @@ class RelaxScrapper:
                     working_hours = value
                 elif 'регистрация' == key.lower():
                     registration_info = value
+                elif 'внимание' in key.lower():
+                    continue
                 else:
                     raise Exception("Metadata is unknown: %s" % key)
         return event_cost, event_genre, event_info_number, working_hours, registration_info, age_restriction

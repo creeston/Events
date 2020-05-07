@@ -54,7 +54,12 @@ class DateInterpreter:
     @staticmethod
     def parse_day_month(date_string):
         date_string = date_string.replace(u"\xa0", " ").strip()
-        day_string, month_string = date_string.split(" ")
+        values = date_string.split(" ")
+        if len(values) > 2:
+            print(values)
+        if len(values) == 1:
+            return int(values[0]), None
+        day_string, month_string = values
         day = int(day_string.strip())
         month = month_mapping[month_string.strip()]
         return day, month
@@ -209,8 +214,11 @@ class DateInterpreter:
 
     @staticmethod
     def parse_citydog_date(date_string):
-        match = date_time_regex_citydog.match(date_string)
+        # 3 мая\nДедлайн: 01.07
+        date_string = date_string.split('\n')[0]
+
         # 12 апреля    |    23:00
+        match = date_time_regex_citydog.match(date_string)
         if match:
             day, month, hour, minute = match.groups()
             day = int(day)
@@ -218,23 +226,30 @@ class DateInterpreter:
             hour = int(hour)
             minute = int(minute)
             return [DateInterpreter.get_date(day, month, hour, minute)]
-        match = date_range_without_end_citydog_regex.match(date_string)
+
         # с 12 марта
+        match = date_range_without_end_citydog_regex.match(date_string)
         if match:
             day, month = match.groups()
             day = int(day)
             month = month_mapping[month]
             return [EventDateRange(datetime.date(current_year, month, day), None, None)]
-        match = date_range_citydog_regex.match(date_string)
+
         # 12 февраля - 30 апреля
+        match = date_range_citydog_regex.match(date_string)
         if match:
             return [DateInterpreter._parse_range(match)]
 
         # 12, 13 апреля
-        values = date_string.split(',')
-        last_day, last_month = DateInterpreter.parse_day_month(values[-1])
-        dates = [datetime.date(current_year, last_month, int(day)) for day in values[:-1]]
-        dates.append(datetime.date(current_year, last_month, last_day))
+        # 9 мая, 13 июня
+        values = [v.strip() for v in date_string.split(',')]
+        dates = []
+        for value in reversed(values):
+            day, month = DateInterpreter.parse_day_month(value)
+            if not month:
+                month = dates[-1].month
+            dates.append(datetime.date(current_year, month, int(day)))
+
         return dates
 
     @staticmethod
@@ -294,26 +309,10 @@ class DateInterpreter:
 
 
 class TagMapper:
-    tut_tag_mapping_file = "data/tags/tut_tag_mapping.json"
-    tut_type_mapping_file = "data/tags/tut_type_mapping.json"
-    relax_tag_mapping_file = "data/tags/relax_mapping.json"
-    relax_type_mapping_file = "data/tags/relax_type_mapping.json"
-    cd_tag_mapping_file = "data/tags/cd_mapping.json"
-    cd_type_mapping_file = "data/tags/cd_type_mapping.json"
+    mapping_file = "data/tags/mapping.json"
 
     def __init__(self):
-        self.relax_mapping = {
-            "tags": self._load_mapping(self.relax_tag_mapping_file),
-            "types": self._load_mapping(self.relax_type_mapping_file),
-        }
-        self.tut_mapping = {
-            "tags": self._load_mapping(self.tut_tag_mapping_file),
-            "types": self._load_mapping(self.tut_type_mapping_file),
-        }
-        self.cd_mapping = {
-            "tags": self._load_mapping(self.cd_tag_mapping_file),
-            "types": self._load_mapping(self.cd_type_mapping_file),
-        }
+        self.mapping = self._load_mapping(self.mapping_file)
 
     @staticmethod
     def _load_mapping(filename):
@@ -321,22 +320,22 @@ class TagMapper:
             return json.load(f)
 
     def map_tut(self, value):
-        return self._get_mapped(value, self.tut_mapping)
+        return self._get_mapped(value, self.mapping["tutby"])
 
     def map_relax(self, value):
-        return self._get_mapped(value, self.relax_mapping)
+        return self._get_mapped(value, self.mapping["relax"])
 
     def map_cd(self, value):
-        return self._get_mapped(value, self.cd_mapping)
+        return self._get_mapped(value, self.mapping["cd"])
 
     @staticmethod
     def _get_mapped(value, mapping):
-        if value in mapping["tags"]:
-            mapped = mapping["tags"][value]
-        elif value in mapping["types"]:
-            mapped = mapping["types"][value]
+        if value in mapping["tag"]:
+            mapped = mapping["tag"][value]
+        elif value in mapping["type"]:
+            mapped = mapping["type"][value]
         else:
-            return value
-            raise Exception("Mapping was not found for %s" % value)
+            print("Unknown tag: %s" % value)
+            return [value.title()]
         return mapped.split(',')
 

@@ -1,5 +1,8 @@
-from scrappers import RelaxScrapper, TutByScrapper, CityDogScrapper
 import json
+import os
+
+from scrappers import RelaxScrapper, TutByScrapper, CityDogScrapper
+from datetime import datetime
 
 
 def write_events_to_file(filename, events):
@@ -15,6 +18,11 @@ def write_events_to_file(filename, events):
         f.write('\n]')
 
 
-write_events_to_file("data/event_data/raw_data/relax.json", RelaxScrapper().list_events())
-write_events_to_file("data/event_data/raw_data/citydog.json", CityDogScrapper().list_events())
-write_events_to_file("data/event_data/raw_data/tutby.json", TutByScrapper().list_events())
+today = datetime.now()
+folder_name = "data/event_data/raw_data/%s_%s_%s_%s/" % (today.year, today.month, today.day, today.hour)
+if not os.path.exists(folder_name):
+    os.mkdir(folder_name)
+
+write_events_to_file(folder_name + "relax.json", RelaxScrapper().list_events())
+write_events_to_file(folder_name + "citydog.json", CityDogScrapper().list_events())
+write_events_to_file(folder_name + "tutby.json", TutByScrapper().list_events())
