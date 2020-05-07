@@ -95,7 +95,7 @@ def markup_by_list(entities, text, tag, cutoff=None):
 
 class PlaceMarkup:
     def __init__(self):
-        self.places = [t.lower() for t in load_json("data/places.json")]
+        self.places = [t.lower() for t in load_json("data/keywords/places.json")]
 
     def markup(self, text):
         return markup_by_list(self.places, text, "PLACE")
@@ -103,15 +103,15 @@ class PlaceMarkup:
 
 class TypeMarkup:
     def __init__(self):
-        self.types = [t.lower() for t in load_json("data/event_type_markup.json")]
+        self.types = [t.lower() for t in load_json("data/keywords/event_types.json")]
 
     def markup(self, text):
-        return markup_by_list(self.types, text, "EVENT", 0.8)
+        return markup_by_list(self.types, text, "EVENT", 0.75)
 
 
 class TypeDetector:
     def __init__(self):
-        self.types = [t.lower() for t in load_json("data/event_type_markup.json")]
+        self.types = [t.lower() for t in load_json("data/keywords/event_types.json")]
 
     def markup(self, text):
         entities = [e.lower() for e in self.types]
@@ -317,7 +317,7 @@ def markup_afisha_events():
     ]
 
     labels_file = open("labeled_afisha_text", "w+", encoding="utf-8")
-    events = load_json("data\\reduced_events.json")
+    events = load_json("data/event_data/reduced_events.json")
     for event in events:
         text_labels = []
         text = event["description"]

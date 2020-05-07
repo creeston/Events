@@ -294,12 +294,12 @@ class DateInterpreter:
 
 
 class TagMapper:
-    tut_tag_mapping_file = "data/tut_tag_mapping.json"
-    tut_type_mapping_file = "data/tut_type_mapping.json"
-    relax_tag_mapping_file = "data/relax_tag_mapping.json"
-    relax_type_mapping_file = "data/relax_type_mapping.json"
-    cd_tag_mapping_file = "data/cd_tag_mapping.json"
-    cd_type_mapping_file = "data/cd_type_mapping.json"
+    tut_tag_mapping_file = "data/tags/tut_tag_mapping.json"
+    tut_type_mapping_file = "data/tags/tut_type_mapping.json"
+    relax_tag_mapping_file = "data/tags/relax_mapping.json"
+    relax_type_mapping_file = "data/tags/relax_type_mapping.json"
+    cd_tag_mapping_file = "data/tags/cd_mapping.json"
+    cd_type_mapping_file = "data/tags/cd_type_mapping.json"
 
     def __init__(self):
         self.relax_mapping = {

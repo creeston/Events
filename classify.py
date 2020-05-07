@@ -29,7 +29,7 @@ class TextPreprocessor:
         ]
         self.stop_words = set(stopwords.words('russian'))
         self.mapping = {}
-        self.places = load_json("data\\places.json")
+        self.places = load_json("data/keywords/places.json")
         self.emoji_regex = re.compile(
             "["
             u"\U0001F600-\U0001F64F"  # emoticons
@@ -211,8 +211,8 @@ class EventNotEventClassifier:
         return prediction[0] == 1
 
     def train(self):
-        events = list(set(open('data/events', encoding="utf-8").readlines()))
-        not_events = list(set(open('data/not_events', encoding="utf-8").readlines()))
+        events = list(set(open('data/event_data/events', encoding="utf-8").readlines()))
+        not_events = list(set(open('data/event_data/not_events', encoding="utf-8").readlines()))
         event_vectors = [self.preprocessor.convert_text_to_feature_vector(event) for event in events]
         not_event_vectors = [self.preprocessor.convert_text_to_feature_vector(not_event) for not_event in not_events]
 
