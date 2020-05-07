@@ -237,7 +237,7 @@ async def main():
         PullEntityMarkup(),
         NatashaMarkup()
     ]
-    labels_file = open("labeled_text", "w+", encoding="utf-8")
+    labels_file = open("labeled_events", "w+", encoding="utf-8")
     async for event in get_events():
         try:
             text = event["text"]
@@ -317,7 +317,7 @@ def markup_afisha_events():
     ]
 
     labels_file = open("labeled_afisha_text", "w+", encoding="utf-8")
-    events = load_json("data/event_data/reduced_events.json")
+    events = load_json("data/event_data/afisha_events.json")
     for event in events:
         text_labels = []
         text = event["description"]
