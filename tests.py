@@ -1,7 +1,7 @@
 from event_models import EventDateRange
 from interpreters import DateInterpreter
 from markup import TypeMarkup, MarkupCurrency, PullEntityMarkup, filter_tags
-from duplicate_detector import DuplicateDetector
+from duplicate_detector import DuplicateEventsRemover
 import datetime
 
 result = DateInterpreter.parse_relax_date("вт, 19 января 2038")
@@ -83,7 +83,7 @@ assert tags[1] == ("DATE", 11, 20)
 
 
 # Remove duplicates
-detector = DuplicateDetector()
+detector = DuplicateEventsRemover()
 events = [
     {"description": "Состоится концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]},
     {"description": "Группа The Feedback отыграет концерт", "dates": [{"year": 2020, "month": 1, "day": 18}]},
