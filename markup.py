@@ -1,6 +1,6 @@
 import json
 import re
-from event_fetchers import TelegramEventFetcher, VkEventFetcher
+from scrappers import TelegramEventFetcher, VkEventFetcher
 from pullenti_wrapper.langs import (set_langs, RU)
 from pullenti_wrapper.processor import (Processor, DATE, ORGANIZATION, PERSON, MONEY, ADDRESS)
 from difflib import get_close_matches, SequenceMatcher

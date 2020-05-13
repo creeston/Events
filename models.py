@@ -2,6 +2,17 @@ from typing import List
 import datetime
 
 
+def group_by_dates(events):
+    events_by_dates = {}
+    for event in events:
+        event_model = Event.from_json(event)
+        dt = event_model.get_first_date()
+        if dt not in events_by_dates:
+            events_by_dates[dt] = []
+        events_by_dates[dt].append(event)
+    return events_by_dates
+
+
 def date_time_to_json(dt):
     if type(dt) == datetime.datetime:
         return {
@@ -12,11 +23,19 @@ def date_time_to_json(dt):
             "minute": dt.minute
         }
     else:
-        return {
-            "year": dt.year,
-            "month": dt.month,
-            "day": dt.day
-        }
+        return date_to_json(dt)
+
+
+def datetime_from_json(j):
+    if "minute" in j:
+        return datetime.datetime(year=int(j['year']), month=int(j['month']), day=int(j['day']),
+                                 hour=int(j['hour']), minute=int(j['minute']))
+    else:
+        return date_from_json(j)
+
+
+def date_from_json(j):
+    return datetime.date(year=int(j['year']), month=int(j['month']), day=int(j['day']))
 
 
 def date_to_json(dt: datetime.date):
@@ -45,11 +64,15 @@ class EventPlace:
             "url": self.place_url
         }
 
+    @staticmethod
+    def from_json(j):
+        return EventPlace(j['name'], j['address'], j['url'])
+
 
 class EventDateRange:
-    def __init__(self, start_day, end_date, week_schedule=None):
+    def __init__(self, start_day, end_day, week_schedule=None):
         self.start_day = start_day
-        self.end_day = end_date
+        self.end_day = end_day
         self.week_schedule = week_schedule
 
     def __str__(self):
@@ -62,10 +85,20 @@ class EventDateRange:
             "schedule": self.week_schedule
         }
 
+    @staticmethod
+    def from_json(j):
+        start, end = None, None
+        if "start" in j and j['start']:
+            start = date_from_json(j['start'])
+        if "end" in j and j["end"]:
+            end = date_from_json(j['end'])
+        return EventDateRange(start_day=start, end_day=end,
+                              week_schedule=j['schedule'])
+
 
 class Event:
     def __init__(self, title: str, short_description: str, poster: str, description: str, place: EventPlace,
-                 event_tags: List[str], event_dates, source: str,
+                 event_tags: List[str], event_dates, source: str, event_types=None,
                  registration_info=None, info=None, age_restriction=None, cost=None, raw_dates=None):
         self.title = title
         self.short_description = short_description
@@ -83,6 +116,39 @@ class Event:
 
         self.raw_dates = raw_dates
 
+    def get_first_date(self):
+        for d in self.event_dates:
+            if type(d) == EventDateRange:
+                return d.start_day
+            elif type(d) == datetime.date or type(d) == datetime.datetime:
+                return d
+        return datetime.date(year=datetime.MINYEAR, month=1, day=1)
+
+    @staticmethod
+    def from_json(j):
+        reg_info, cost, age, info, raw_dates = None, None, None, None, None
+        if 'registration_info' in j:
+            reg_info = j['registration_info']
+        if 'cost' in j:
+            cost = j['cost']
+        if 'age' in j:
+            age = j['age']
+        if 'info' in j:
+            info = j['info']
+        if 'raw_dates' in j:
+            raw_dates = j['raw_dates']
+
+        dates = []
+        for d in j['dates']:
+            if "start" in d:
+                dates.append(EventDateRange.from_json(d))
+            else:
+                dates.append(datetime_from_json(d))
+
+        return Event(j['title'], j['short_description'], j['poster'],
+                     j['description'], EventPlace.from_json(j['place']), j['tags'], dates, j['url'],
+                     None, reg_info, info, age, cost, raw_dates)
+
     def to_json(self):
         result = {
             "title": self.title,
@@ -97,7 +163,7 @@ class Event:
             "info": self.info,
             "cost": self.cost,
             "dates": [],
-            "raw_dates": self.raw_dates
+            "raw_dates": self.raw_dates,
         }
 
         for d in self.event_dates:
@@ -107,6 +173,14 @@ class Event:
                 result["dates"].append(date_time_to_json(d))
 
         return result
+
+    def to_str(self):
+        result = [self.title]
+        if self.short_description:
+            result.append(self.short_description)
+        if self.description:
+            result.append(self.description)
+        return "\n".join(result)
 
     def __str__(self):
         result = [

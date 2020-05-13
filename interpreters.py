@@ -1,7 +1,7 @@
 import re
 import datetime
 import json
-from event_models import *
+from models import *
 
 hyphens = "[\-‒–—―—]"
 

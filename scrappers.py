@@ -5,7 +5,7 @@ import re
 import demoji
 
 from time import sleep
-from event_models import *
+from models import *
 from interpreters import DateInterpreter, TagMapper
 from telethon import TelegramClient
 from configuration import tg_credentials, vk_credentials

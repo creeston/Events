@@ -1,4 +1,4 @@
-from event_models import EventDateRange
+from models import EventDateRange
 from interpreters import DateInterpreter
 from markup import TypeMarkup, MarkupCurrency, PullEntityMarkup, filter_tags
 from duplicate_detector import DuplicateEventsRemover
