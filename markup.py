@@ -2,11 +2,11 @@ import json
 import re
 from scrappers import TelegramEventFetcher, VkEventFetcher
 from pullenti_wrapper.langs import (set_langs, RU)
-from pullenti_wrapper.processor import (Processor, DATE, ORGANIZATION, PERSON, MONEY, ADDRESS)
+from pullenti_wrapper.processor import (Processor, DATE, ORGANIZATION, MONEY, ADDRESS)
 from difflib import get_close_matches, SequenceMatcher
 from itertools import groupby
 from natasha import (AddressExtractor, OrganisationExtractor, DatesExtractor)
-import asyncio
+from deeppavlov import configs, build_model
 
 
 punct_re = re.compile(r"[.,;!?]")
@@ -95,7 +95,7 @@ def markup_by_list(entities, text, tag, cutoff=None):
 
 class PlaceMarkup:
     def __init__(self):
-        self.places = [t.lower() for t in load_json("data/keywords/places.json")]
+        self.places = [t.lower() for t in load_json("C:\\Projects\\Research\\Events\\data\\keywords\\places.json")]
 
     def markup(self, text):
         return markup_by_list(self.places, text, "PLACE")
@@ -137,7 +137,7 @@ class TypeDetector:
 
 
 class MarkupCurrency:
-    currency = ["б\.?\s*р\.?", "byn", "руб\.?", "рублей", "р[^\w]"]
+    currency = [r"б\.?\s*р\.?", "byn", r"руб\.?", "рублей", r"р[^\w]"]
     free = ["свободный", "бесплатно", "free"]
     currency_re = re.compile(r"((\d+([.,]\d{2})?)\s*(" + "|".join(currency) + "))")
 
@@ -146,14 +146,72 @@ class MarkupCurrency:
         for match in self.currency_re.finditer(text):
             result.append(("MONEY", *match.span()))
         free_results = markup_by_list(self.free, text, "FREE", 0.8)
-        result.extend(free_results)
+        result.extend([(t, s, e) for t, s, e in free_results])
         return result
+
+
+class DeepPavlovMarkup:
+    exclude_categories = ["WORK_OF_ART", "PERSON", "PRODUCT", "NORP", "LANGUAGE", "ORDINAL", "GPE",
+                          "CARDINAL", "LAW", "QUANTITY"]
+
+    def __init__(self):
+        self.model = build_model(configs.ner.ner_ontonotes_bert_mult, download=True)
+
+    def markup(self, text):
+        try:
+            result = self.model([text])
+        except:
+            return []
+        tokens = result[0][0]
+        tags = result[1][0]
+
+        markups = []
+        current_markup = []
+        current_tag = None
+        for token, tag in zip(tokens, tags):
+            if tag == 'O':
+                continue
+            if tag[0] == 'B':
+                if (current_tag == 'FAC' or current_tag == 'GPE') and tag[2:] in ['QUANTITY', 'CARDINAL', 'TIME']:
+                    current_tag = 'FAC'
+                    current_markup.append(token)
+                    continue
+                if len(current_markup) > 0:
+                    markups.append((current_tag, list(current_markup)))
+                    current_tag, current_markup = None, []
+                current_markup.append(token)
+                current_tag = tag[2:]
+            if tag[0] == 'I':
+                current_markup.append(token)
+        if len(current_markup) > 0:
+            markups.append((current_tag, list(current_markup)))
+
+        markup_spans = []
+        shift = 0
+        for tag, tokens in markups:
+            spans = []
+            current_text = text[shift:]
+            for token in tokens:
+                start = current_text.index(token)
+                end = start + len(token)
+                if len(spans) > 0:
+                    last_span = spans[-1]
+                    start += last_span[1]
+                    end += last_span[1]
+
+                spans.append((start, end))
+                current_text = text[shift:][end:]
+            start = spans[0][0] + shift
+            end = spans[-1][1] + shift
+            shift = end
+            markup_spans.append((tag, start, end))
+        return [m for m in markup_spans if m[0] not in self.exclude_categories]
 
 
 class PullEntityMarkup:
     def __init__(self):
         set_langs([RU])
-        self.processor = Processor([PERSON, ORGANIZATION, DATE, ADDRESS, MONEY])
+        self.processor = Processor([ORGANIZATION, DATE, ADDRESS, MONEY])
 
     def markup(self, text):
         result = self.processor(text)
@@ -212,12 +270,12 @@ class NatashaMarkup:
 
 
 async def get_events():
-    tg_fetcher = TelegramEventFetcher()
-    async for event in tg_fetcher.fetch_events():
-        yield event
-
     vk_fetcher = VkEventFetcher()
     for event in vk_fetcher.fetch_events():
+        yield event
+
+    tg_fetcher = TelegramEventFetcher()
+    async for event in tg_fetcher.fetch_events():
         yield event
 
 
@@ -230,76 +288,41 @@ def filter_tags(tags):
     return tags_filtered
 
 
-async def main():
-    markups = [
-        PlaceMarkup(),
-        MarkupCurrency(),
-        PullEntityMarkup(),
-        NatashaMarkup()
-    ]
-    labels_file = open("labeled_events", "w+", encoding="utf-8")
-    async for event in get_events():
-        try:
-            text = event["text"]
-            result = []
-            if "dates" in event and event["dates"]:
-                for date in event["dates"]:
-                    result.append(("DATE", *date))
+markups = [
+    PlaceMarkup(),
+    MarkupCurrency(),
+    PullEntityMarkup(),
+    NatashaMarkup(),
+    DeepPavlovMarkup()
+]
 
-            if "title" in event and event["title"]:
-                result.append(("SUBJECT", *event["title"]))
 
-            for markup in markups:
-                result.extend(markup.markup(text))
+def markup_event(event):
+    text = event["text"]
+    result = []
 
-            other_tags = [tag for tag in result if tag[0] in ["FREE", "MONEY", "PERSON", "TITLE"]]
-            date_tags = filter_tags([tag for tag in result if "DATE" in tag[0]])
-            address_tags = filter_tags([tag for tag in result if "ADDRESS" in tag[0]])
-            org_tags = filter_tags([tag for tag in result if "ORG" in tag[0]])
-            place_tags = [tag for tag in result if "PLACE" in tag[0]]
+    for markup in markups:
+        result.extend(markup.markup(text))
 
-            if "place" in event and event["place"]:
-                start, end = event["place"]
-                address_tag = [tag for tag in address_tags if tag[1] >= start and tag[2] <= end]
-                if len(address_tag) > 0:
-                    address_tag = address_tag[0]
-                    before_address = text[start:address_tag[1]].strip()
-                    after_address = text[address_tag[2]:end].strip()
-                    if len(after_address) > 3:
-                        address_tag = ("ADDRESS", address_tag[1], end)
-                        address_tags.append(address_tag)
-                        address_tags = filter_tags(address_tags)
-                    if len(before_address) > 3:
-                        place = before_address.replace("(", "").strip()
-                        start = text.find(place)
-                        place_tag = ("PLACE", start, start + len(place))
-                        place_tags.append(place_tag)
-                else:
-                    place_tag = ("PLACE", start, end)
-                    place_tags.append(place_tag)
-                place_tags = filter_tags(place_tags)
+    result = sorted(result, key=lambda p: p[1])
+    return result
 
-            result = []
-            result.extend(place_tags)
-            result.extend(org_tags)
-            result.extend(address_tags)
-            result.extend(date_tags)
-            result.extend(other_tags)
-            result = sorted(filter_tags(result), key=lambda p: p[1])
-            if len(result) < 2:
-                continue
-            if len([r for r in result if r[0] == "DATE"]) == 0:
-                continue
+    other_tags = [tag for tag in result if tag[0] in ["FREE", "MONEY", "PERSON", "TITLE"]]
+    date_tags = [tag for tag in result if "DATE" in tag[0]]#filter_tags([tag for tag in result if "DATE" in tag[0]])
+    address_tags = [tag for tag in result if "ADDRESS" in tag[0]]#filter_tags([tag for tag in result if "ADDRESS" in tag[0]])
+    org_tags = [tag for tag in result if "ORG" in tag[0]]#filter_tags([tag for tag in result if "ORG" in tag[0]])
+    place_tags = [tag for tag in result if "PLACE" in tag[0]]
 
-            labeled_text = {"text": text, "labels": []}
-            for label, start, end in result:
-                labeled_text["labels"].append([start, end, label])
 
-            j = json.dumps(labeled_text, ensure_ascii=False)
-            labels_file.write(j + "\n")
-        except Exception as e:
-            print(e)
-            continue
+    result = []
+    result.extend(place_tags)
+    result.extend(org_tags)
+    result.extend(address_tags)
+    result.extend(date_tags)
+    result.extend(other_tags)
+    #result = sorted(filter_tags(result), key=lambda p: p[1])
+    result = sorted(result, key=lambda p: p[1])
+    return result
 
 
 def get_span(text, match):
@@ -309,13 +332,6 @@ def get_span(text, match):
 
 
 def markup_afisha_events():
-    markups = [
-        MarkupCurrency(),
-        PullEntityMarkup(),
-        NatashaMarkup(),
-        TypeMarkup()
-    ]
-
     labels_file = open("labeled_afisha_text", "w+", encoding="utf-8")
     events = load_json("data/event_data/afisha_events.json")
     for event in events:
@@ -388,5 +404,4 @@ def markup_afisha_events():
 
 
 if __name__ == "__main__":
-    #asyncio.run(main())
     markup_afisha_events()
