@@ -1,8 +1,13 @@
-from models import EventDateRange
-from interpreters import DateInterpreter
-from markup import TypeMarkup, MarkupCurrency, PullEntityMarkup, filter_tags
-from duplicate_detector import DuplicateEventsRemover
 import datetime
+
+from models import EventDateRange
+from interpreters import DateInterpreter, try_parse_date_string
+from markup import TypeMarkup, MarkupCurrency, PullEntityMarkup, filter_tags, markup_event
+from duplicate_detector import DuplicateEventsRemover
+
+
+markup_event({"text": 'Каждый четверг в 19:00 пр. Дзержинского 9 офис 1015 (первый этаж, вход со двора).'})
+
 
 result = DateInterpreter.parse_relax_date("вт, 19 января 2038")
 assert result[0] == 19 and result[1] == 1
@@ -85,10 +90,10 @@ assert tags[1] == ("DATE", 11, 20)
 # Remove duplicates
 detector = DuplicateEventsRemover()
 events = [
-    {"description": "Состоится концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]},
-    {"description": "Группа The Feedback отыграет концерт", "dates": [{"year": 2020, "month": 1, "day": 18}]},
-    {"description": "Приходите на концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]},
-    {"description": "Концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]}
+    {"title": "Состоится концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]},
+    {"title": "Приходите на концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]},
+    {"title": "Концерт группы The Feedback", "dates": [{"year": 2020, "month": 1, "day": 18}]}
 ]
+
 filtered_events = detector.remove_duplicated_events(events)
 assert len(filtered_events) == 1

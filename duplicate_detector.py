@@ -12,7 +12,7 @@ class DuplicateEventsRemover:
                 duplicates_list = self.detect_duplicates(grouped_events)
                 unique_events = []
                 for duplicates in duplicates_list:
-                    unique_event = max(duplicates, key=lambda e: len(e['title'] + e['description']))
+                    unique_event = max(duplicates, key=lambda e: len(self._get_event_text(e)))
                     unique_events.append(unique_event)
             else:
                 unique_events = grouped_events
@@ -40,13 +40,16 @@ class DuplicateEventsRemover:
                 j += (i + 1)
                 if j in removed_idx:
                     continue
-                res = self._similar(
-                    current_event['title'] + " " + current_event['description'],
-                    event['title'] + " " + event['description'])
+                current_text, event_text = self._get_event_text(current_event), self._get_event_text(event)
+                if len(current_text) == 0 or len(event_text) == 0:
+                    continue
+
+                res = self._similar(current_text, event_text)
                 if res > 0.55:
                     duplicates.append(event)
                     removed_idx.add(j)
-                elif self._get_place_name(current_event) == self._get_place_name(event):
+                elif self._get_place_name(current_event) == self._get_place_name(event) and \
+                        'title' in current_event and 'title' in event:
                     res = self._similar(current_event['title'], event['title'])
                     if res > 0.7:
                         duplicates.append(event)
@@ -54,6 +57,15 @@ class DuplicateEventsRemover:
 
             duplicates_list.append(duplicates)
         return duplicates_list
+
+    @staticmethod
+    def _get_event_text(event):
+        event_text = []
+        if 'title' in event:
+            event_text.append(event['title'])
+        if 'description' in event:
+            event_text.append(event['description'])
+        return "\n".join(event_text)
 
     @staticmethod
     def _similar(a, b):
