@@ -975,8 +975,6 @@ class TelegramEventFetcher:
 
                     if detect_lang(text) == "by":
                         continue
-                        text = self.translator.translate_from_bel(text)
-                        raw_text = self.translator.translate_from_bel(raw_text)
 
                     title = None
                     times = []

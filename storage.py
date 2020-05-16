@@ -1,6 +1,6 @@
 import json
 import datetime
-from azure.storage.table import Table, Entity, TableService, TableBatch
+from azure.storage.table import TableService, TableBatch
 from models import Event, group_by_dates
 
 

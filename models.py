@@ -105,7 +105,8 @@ class Event:
         self.poster = poster
         self.description = description
         self.place = place
-        self.event_tags = list(set(event_tags))
+        if event_tags:
+            self.event_tags = list(set(event_tags))
         self.event_dates = event_dates
         self.source = source
         self.registration_info = registration_info
@@ -144,10 +145,24 @@ class Event:
                 dates.append(EventDateRange.from_json(d))
             else:
                 dates.append(datetime_from_json(d))
+        title, short, description, poster, place, tags, url = None, None, None, None, None, None, None
+        if 'title' in j:
+            title = j['title']
+        if 'short_description' in j:
+            short = j['short_description']
+        if 'poster' in j:
+            poster = j['poster']
+        if 'description' in j:
+            description = j['description']
+        if 'place' in j:
+            place = EventPlace.from_json(j['place'])
+        if 'tags' in j:
+            tags = j['tags']
+        if 'url' in j:
+            url = j['url']
 
-        return Event(j['title'], j['short_description'], j['poster'],
-                     j['description'], EventPlace.from_json(j['place']), j['tags'], dates, j['url'],
-                     None, reg_info, info, age, cost, raw_dates)
+        return Event(title, short, poster, description, place, tags, dates, url, None,
+                     reg_info, info, age, cost, raw_dates)
 
     def to_json(self):
         result = {
