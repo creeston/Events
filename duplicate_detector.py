@@ -1,5 +1,5 @@
 from difflib import SequenceMatcher
-from models import Event, group_by_dates
+from models import group_by_dates
 
 
 class DuplicateEventsRemover:
@@ -19,6 +19,30 @@ class DuplicateEventsRemover:
 
             filtered_events.extend(unique_events)
         return filtered_events
+
+    def remove_duplicate_strings(self, strings):
+        if len(strings) < 2:
+            return strings
+
+        removed_idx = set()
+        duplicates_list = []
+        for i, current_string in enumerate(strings):
+            if i in removed_idx:
+                continue
+
+            duplicates = [current_string]
+            for j, string in enumerate(strings[i + 1:]):
+                j += (i + 1)
+                if j in removed_idx:
+                    continue
+
+                res = self._similar(current_string, string)
+                if res > 0.6:
+                    duplicates.append(string)
+                    removed_idx.add(j)
+
+            duplicates_list.append(duplicates)
+        return [max(duplicates, key=lambda d: len(d)) for duplicates in duplicates_list]
 
     @staticmethod
     def _get_place_name(event):

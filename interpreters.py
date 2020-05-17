@@ -186,8 +186,9 @@ def get_date_hyphen_date(groups):
 
 
 # 12 апреля, четверг
+# 15 февраля (суббота)
 # group[0] -> day, group[2] -> month
-weekday_after = regex.compile(day_month_re + r"[,\s]+\p{L}+")
+weekday_after = regex.compile(day_month_re + r"\s*(,\s*\p{L}+|\s*\(\p{L}+\))")
 
 # четверг 12 апреля
 # четверг, 13 мая
@@ -220,7 +221,7 @@ time_range_re = regex.compile(r"[с]?\s*(" + time_regex + r")\s*(до|" + hyphen
 def get_time_range(groups):
     start_time = get_time(groups[1:6])
     end_time = get_time(groups[8:])
-    return {"start": start_time, "end": end_time}
+    return {"start_time": start_time, "end_time": end_time}
 
 
 # вторник в 18:30

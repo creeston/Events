@@ -1,12 +1,15 @@
 import json
 import re
-from scrappers import TelegramEventFetcher, VkEventFetcher
+import regex
+
 from pullenti_wrapper.langs import (set_langs, RU)
 from pullenti_wrapper.processor import (Processor, DATE, ORGANIZATION, MONEY, ADDRESS)
 from difflib import get_close_matches, SequenceMatcher
 from itertools import groupby
 from natasha import (AddressExtractor, OrganisationExtractor, DatesExtractor)
 from deeppavlov import configs, build_model
+from interpreters import try_parse_date_string, hyphens
+from duplicate_detector import DuplicateEventsRemover
 
 
 punct_re = re.compile(r"[.,;!?]")
@@ -57,20 +60,26 @@ def markup_by_list(entities, text, tag, cutoff=None):
     entities = [e.lower() for e in entities]
     lower_text = " " + punct_re.sub(" ", text.lower()) + " "
     result = []
-
     for entity in entities:
-        start = lower_text.find(" %s " % entity)
-        if start < 0:
+        start_index = lower_text.find(" %s " % entity)
+        if start_index < 0:
+            start_index = max(lower_text.find(" \"%s\" " % entity),
+                              lower_text.find(" “%s” " % entity),
+                              lower_text.find(" «%s» " % entity),
+                              lower_text.find(" (%s) " % entity))
+            if start_index >= 0:
+                start_index += 1
+        if start_index < 0:
             if not cutoff:
                 continue
             match = find_entity(text, entity, cutoff)
             if not match:
                 continue
-            start = lower_text.find(" %s " % match)
-            end = start + len(match)
+            start_index = lower_text.find(" %s " % match)
+            end = start_index + len(match)
         else:
-            end = start + len(entity)
-        result.append((tag, start, end))
+            end = start_index + len(entity)
+        result.append((tag, start_index, end))
 
     filtered_result = []
     for start, matches in groupby(result, key=lambda m: m[1]):
@@ -95,7 +104,9 @@ def markup_by_list(entities, text, tag, cutoff=None):
 
 class PlaceMarkup:
     def __init__(self):
-        self.places = [t.lower() for t in load_json("C:\\Projects\\Research\\Events\\data\\keywords\\places.json")]
+        self.address_place_dict = load_json("C:\\Projects\\Research\\Events\\data\\keywords\\places.json")
+        places = [places for address, places in self.address_place_dict.items()]
+        self.places = list(set([p for sublist in places for p in sublist]))
 
     def markup(self, text):
         return markup_by_list(self.places, text, "PLACE")
@@ -139,15 +150,43 @@ class TypeDetector:
 class MarkupCurrency:
     currency = [r"б\.?\s*р\.?", "byn", r"руб\.?", "рублей", r"р[^\w]"]
     free = ["свободный", "бесплатно", "free"]
-    currency_re = re.compile(r"((\d+([.,]\d{2})?)\s*(" + "|".join(currency) + "))")
+    currency_value = r"(\d+)([.,](\d{2}))?"
+    currency_regex = currency_value + r"(\s*(" + "|".join(currency) + "))"
+    currency_re = re.compile(currency_regex)
+    currency_range_re = re.compile(currency_value + r"\s*" + hyphens + r"\s*" + currency_regex)
 
     def markup(self, text):
         result = []
+        for match in self.currency_range_re.finditer(text):
+            result.append(("MONEY", *match.span()))
         for match in self.currency_re.finditer(text):
+            start, end = match.span()
+            if len([s for t, s, e in result if start >= s and start <= e]) > 0:
+                continue
             result.append(("MONEY", *match.span()))
         free_results = markup_by_list(self.free, text, "FREE", 0.8)
         result.extend([(t, s, e) for t, s, e in free_results])
         return result
+
+    def get_currency(self, groups):
+        value = 0
+        whole_part = groups[0]
+        fract_part = groups[2]
+        if whole_part:
+            value += int(whole_part)
+        if fract_part:
+            value += int(fract_part) / 100
+        return value
+
+    def parse_currency(self, currency_string):
+        match = self.currency_re.fullmatch(currency_string)
+        if match:
+            return [self.get_currency(match.groups())]
+        match = self.currency_range_re.fullmatch(currency_string)
+        if match:
+            groups = match.groups()
+            return [self.get_currency(groups[:3]), self.get_currency(groups[3:])]
+        return None
 
 
 class DeepPavlovMarkup:
@@ -269,139 +308,312 @@ class NatashaMarkup:
         return result
 
 
-async def get_events():
-    vk_fetcher = VkEventFetcher()
-    for event in vk_fetcher.fetch_events():
-        yield event
+class NamedEntityExtractor:
+    def __init__(self):
+        self.markupers = [
+            PlaceMarkup(),
+            MarkupCurrency(),
+            PullEntityMarkup(),
+            NatashaMarkup(),
+            DeepPavlovMarkup()
+        ]
+        self.structured_data_extractor = DataExtractor()
 
-    tg_fetcher = TelegramEventFetcher()
-    async for event in tg_fetcher.fetch_events():
-        yield event
+    def extract_entities_from_event(self, event):
+        markups = list(self.get_event_markup(event))
+        if len(markups) == 0:
+            return None
+
+        entities = self.structured_data_extractor.get_structured_data_from_markups(markups, event)
+        return entities
+
+    def get_event_markup(self, e):
+        markups = self.markup_event_text(e)
+        if len(markups) == 0:
+            return
+        for tag, start, end in markups:
+            value = e[start:end]
+            value = self._fix_paranthesis(value)
+            value = self._fix_quotes(value)
+            value = value.strip()
+            if tag == "TIME" or tag == "DATE":
+                date_obj, date_string = try_parse_date_string(value)
+                if date_string:
+                    rest_value = value.replace(date_string, "").strip()
+                    if len(rest_value) > 0 and try_parse_date_string(rest_value)[1] is None:
+                        yield "FAC", rest_value
+                    elif len(rest_value) > 0:
+                        yield "DATE", rest_value
+                    yield "TIME", date_string
+                    continue
+            yield tag, value
+
+    def markup_event_text(self, text):
+        result = []
+
+        for markup in self.markupers:
+            result.extend(markup.markup(text))
+
+        result = sorted(result, key=lambda p: p[1])
+        return result
+
+    def _fix_paranthesis(self, text):
+        text = self.fix_paired_chars(text, '(', ')')
+        return text
+
+    def _fix_quotes(self, text):
+        text = self.fix_paired_chars(text, "«", "»")
+        count = len([c for c in text if c == '"'])
+        if count % 2 == 0:
+            return text
+        text = text + '"'
+        return text.replace('""', '')
+
+    @staticmethod
+    def fix_paired_chars(text, open_char, close_char):
+        open_count = len([c for c in text if c == open_char])
+        close_count = len([c for c in text if c == close_char])
+        if open_count == close_count:
+            return text
+
+        if open_count - close_count == 1:
+            text = text + close_char
+        if close_count - open_count == 1:
+            text = text.replace(close_char, "").replace(open_char, "")
+        return text.replace(open_char + close_char, "")
 
 
-def filter_tags(tags):
-    tags_filtered = []
-    while len(tags) > 0:
-        max_tag = max(tags, key=lambda t: t[2] - t[1])
-        tags_filtered.append(max_tag)
-        tags = [t for t in tags if not (t[1] >= max_tag[1] and t[2] <= max_tag[2])]
-    return tags_filtered
+class DataExtractor:
+    open_quote_chars = ['"', "“", "«"]
+    close_quote_chars = ['"', '»', '”']
+    quote_chars = list(set(open_quote_chars + close_quote_chars))
+    quotated_text_re = regex.compile(r'([' +
+                                     "".join(open_quote_chars) + r']([^' +
+                                     "".join(close_quote_chars) + r']*)[' +
+                                     "".join(close_quote_chars) + r'])')
+    open_bracket_chars = ['(', '[']
+    close_bracket_chars = [')', ']']
 
+    def __init__(self):
+        self.duplicate_detector = DuplicateEventsRemover()
+        self.currency_markup = MarkupCurrency()
 
-markups = [
-    PlaceMarkup(),
-    MarkupCurrency(),
-    PullEntityMarkup(),
-    NatashaMarkup(),
-    DeepPavlovMarkup()
-]
+    def get_structured_data_from_markups(self, text_markup, text):
+        dates = self.get_dates(text_markup)
+        address, places = self.get_place(text_markup)
+        if address:
+            address = self._remove_trailing_comma(address)
+        if places:
+            places = [self._remove_trailing_comma(p) for p in places]
+            places = [re.split(r"[!]", p) for p in places]
+            places = [p.strip() for sublist in places for p in sublist if len(p.strip()) > 2]
+            places = [p for p in places if not try_parse_date_string(p)[0]
+                      and "минут" not in p
+                      and "час" not in p
+                      and "начал" not in p]
+            places = self.duplicate_detector.remove_duplicate_strings(places)
 
+        title = self.get_title(text)
+        cost, if_free = self.get_metadata(text_markup)
+        if len(cost) > 0:
+            for c in [v for tag, v in text_markup if tag == "MONEY"]:
+                for i in range(len(places)):
+                    places[i] = places[i].replace(c, "")
 
-def markup_event(event):
-    text = event["text"]
-    result = []
+        return {"dates": dates, "address": address, "place": places,
+                "title": title, "is_free": if_free, "cost": cost}
 
-    for markup in markups:
-        result.extend(markup.markup(text))
+    def get_dates(self, markups):
+        dates = []
+        for t, value in [m for m in markups if m[0] in ["DATE", "DATERANGE", "TIME"]]:
+            value = value.lower().replace('г. г.', "г.")
+            match, value = try_parse_date_string(value)
+            if not match:
+                continue
+            if "start" in match and match["start"] and "day" in match["start"] and match['start']['day']:
+                if "month" not in match['start'] or not match['start']['month']:
+                    match['start']['month'] = match['end']['month']
+            dates.append(match)
 
-    result = sorted(result, key=lambda p: p[1])
-    return result
+        unique_dates = []
+        self.get_unique_dates(dates, unique_dates)
+        return unique_dates
 
-    other_tags = [tag for tag in result if tag[0] in ["FREE", "MONEY", "PERSON", "TITLE"]]
-    date_tags = [tag for tag in result if "DATE" in tag[0]]#filter_tags([tag for tag in result if "DATE" in tag[0]])
-    address_tags = [tag for tag in result if "ADDRESS" in tag[0]]#filter_tags([tag for tag in result if "ADDRESS" in tag[0]])
-    org_tags = [tag for tag in result if "ORG" in tag[0]]#filter_tags([tag for tag in result if "ORG" in tag[0]])
-    place_tags = [tag for tag in result if "PLACE" in tag[0]]
+    def get_unique_dates(self, dates, unique_list):
+        ranges = [d for d in dates if "start" in d]
+        for date_range in ranges:
+            start, end = date_range['start'], date_range['end']
+            if start:
+                existing = [d for d in unique_list if d['start'] == start]
+                if len(existing) == 0:
+                    unique_list.append(date_range)
+            elif end:
+                existing = [d for d in unique_list if d['end'] == end]
+                if len(existing) == 0:
+                    unique_list.append(date_range)
 
+        dates = [d for d in dates if "start" not in d]
+        time_without_date = None
+        date_without_time = None
+        for date in dates:
+            if type(date) == list:
+                self.get_unique_dates(date, unique_list)
+            elif "day" in date:
+                existing = [d for d in unique_list if "day" in d
+                            and d["day"] == date['day']
+                            and d['month'] == date['month']]
+                if len(existing) == 0:
+                    ranges = [[d["start"], d["end"]] for d in unique_list if "start" in d]
+                    ranges = [d for sublist in ranges for d in sublist if d]
+                    existing = [d for d in ranges if
+                                "day" in d and d["day"] == date['day'] and d['month'] == date['month']]
 
-    result = []
-    result.extend(place_tags)
-    result.extend(org_tags)
-    result.extend(address_tags)
-    result.extend(date_tags)
-    result.extend(other_tags)
-    #result = sorted(filter_tags(result), key=lambda p: p[1])
-    result = sorted(result, key=lambda p: p[1])
-    return result
+                if len(existing) == 0:
+                    unique_list.append(date)
+                    if "hour" not in date:
+                        if time_without_date:
+                            if "hour" in time_without_date:
+                                date["hour"] = time_without_date["hour"]
+                                date["minute"] = time_without_date["minute"]
+                            else:
+                                date["start_time"] = time_without_date["start_time"]
+                                date["end_time"] = time_without_date["end_time"]
+                            time_without_date = None
+                        else:
+                            date_without_time = date
+                elif "hour" in date:
+                    existing[0]['hour'] = date['hour']
+                    existing[0]['minute'] = date['minute']
+            elif "hour" in date:
+                if date_without_time:
+                    date_without_time["hour"] = date["hour"]
+                    date_without_time["minute"] = date["minute"]
+                    date_without_time = None
+                else:
+                    time_without_date = date
+            elif "start_time" in date:
+                if date_without_time:
+                    date_without_time["start_time"] = date["start_time"]
+                    date_without_time["end_time"] = date["end_time"]
+                    date_without_time = None
+                else:
+                    time_without_date = date
 
+    def get_best_address(self, candidates):
+        common_string = candidates[0]
+        for i in range(len(candidates) - 1):
+            common_string = self._get_common_substring(common_string, candidates[i + 1])
+        candidates = [c for c in candidates if c.startswith(common_string)]
+        if len(candidates) == 0:
+            return None
+        return max(candidates, key=lambda l: len(l))
 
-def get_span(text, match):
-    start = text.find(match)
-    end = start + len(match)
-    return start, end
+    def get_place(self, markups):
+        fac_max_len = 80
+        address = None
+        place_candidates = []
+        address_tags = list(set([v for t, v in markups if t == "ADDRESS"]))
+        fac_tags = list(set([v for t, v in markups if t == "FAC" and len(v) <= fac_max_len]))
+        place_tags = list(set(v for t, v in markups if t == "PLACE"))
 
+        if len(address_tags) == 1:
+            address = address_tags[0]
+        elif len(address_tags) > 1:
+            address = self.get_best_address(address_tags)
+        elif len(address_tags) == 0:
+            address_candidates = [candidate for candidate in fac_tags if any(c.isdigit() for c in candidate)]
+            if len(address_candidates) > 0:
+                address = address_candidates[0]
 
-def markup_afisha_events():
-    labels_file = open("labeled_afisha_text", "w+", encoding="utf-8")
-    events = load_json("data/event_data/afisha_events.json")
-    for event in events:
-        text_labels = []
-        text = event["description"]
-        title = event["title"]
+        if len(place_tags) > 0:
+            return address, place_tags
 
-        # try to mark subject, knowing the title of the event
-        title_match = find_entity(text, title, cutoff=0.8)
-        if title_match:
-            text_labels.append(("SUBJECT", *get_span(text, title_match)))
-        else:
-            # put title to the beginning of the text and mark it as SUBJECT
-            text_labels.append(("SUBJECT", 0, len(title)))
-            if title[-1] == ".":
-                text = "%s %s" % (title, text)
+        # try to extract place from "fac" tags
+        if not address:
+            return None, []
+
+        for value in fac_tags:
+            common_part = self._get_common_substring(value, address)
+            if common_part != address:
+                if len(value) >= 5 and len(common_part) < 3:
+                    place_candidates.append(value)
             else:
-                text = "%s. %s" % (title, text)
+                rest = value.replace(common_part, "").replace("()", "").strip()
+                rest = self._remove_trailing_comma(rest)
+                if len(rest) > 2 and value.startswith(rest):
+                    place_candidates.append(rest)
 
-        # try to mark place, knowing the title of the event
-        place = event["place"]["name"]
-        place_match = find_entity(text, place, cutoff=0.5)
-        if place_match:
-            text_labels.append(("PLACE", *get_span(text, place_match)))
-        else:
-            # put place to the end of the text
-            start = len(text) + 1
-            text_labels.append(("PLACE", start, start + len(place)))
-            text = "%s %s" % (text, place)
+        return address, place_candidates
 
-        for markup in markups:
-            try:
-                text_labels.extend(markup.markup(text))
-            except Exception as e:
-                print(e)
-                continue
+    def get_title(self, text):
+        tokens = text.split(" ")
+        possible_title = []
 
-        other_tags = [tag for tag in text_labels if tag[0] in ["FREE", "MONEY", "PERSON", "SUBJECT", "EVENT"]]
-        date_tags = filter_tags([tag for tag in text_labels if "DATE" in tag[0]])
-        address_tags = filter_tags([tag for tag in text_labels if "ADDRESS" in tag[0]])
-        org_tags = filter_tags([tag for tag in text_labels if "ORG" in tag[0]])
-        place_tags = [tag for tag in text_labels if "PLACE" in tag[0]]
+        trailing_bracket_token_id = None
+        for token_id, token in enumerate(tokens):
+            for char in token:
+                if char in self.open_bracket_chars:
+                    trailing_bracket_token_id = token_id
+                if char in self.close_bracket_chars:
+                    trailing_bracket_token_id = None
+            possible_title.append(token)
+            if sum([len(t) for t in possible_title]) > 80:
+                break
+        if trailing_bracket_token_id:
+            possible_title = possible_title[:trailing_bracket_token_id]
+        possible_title = " ".join(possible_title)
 
-        text_labels = []
-        text_labels.extend(place_tags)
-        text_labels.extend(org_tags)
-        text_labels.extend(address_tags)
-        text_labels.extend(date_tags)
-        text_labels.extend(other_tags)
-        text_labels = sorted(filter_tags(text_labels), key=lambda p: p[1])
+        candidates = self.quotated_text_re.findall(possible_title)
+        if len(candidates) > 0:
+            quoted_text = candidates[-1][0]
+            index_of_quoted = possible_title.index(quoted_text)
+            return possible_title[:(index_of_quoted + len(quoted_text))] + "."
 
-        if all([l[0] != "DATE" for l in text_labels]) == 0:
-            # put own dates
-            if "raw_dates" not in event:
-                continue
+        sentences = possible_title.split("!")
+        if len(sentences) > 1:
+            return sentences[0] + "!"
 
-            dates = event["raw_dates"]
-            for date in dates:
-                start = len(text) + 1
-                text_labels.append(("DATE", start, start + len(date)))
-                text = "%s %s" % (text, date)
+        sentences = possible_title.split("?")
+        if len(sentences) > 1:
+            return sentences[0] + "?"
 
-        labeled_text = {"text": text, "labels": []}
-        for label, start, end in text_labels:
-            labeled_text["labels"].append([start, end, label])
-            print("[%s]\t%s" % (label, text[start:end]))
-        print()
-        j = json.dumps(labeled_text, ensure_ascii=False)
-        labels_file.write(j + "\n")
+        sentences = regex.split(r"([\p{Ll}\d]\.)\s*(\p{Lu})", possible_title)
+        if len(sentences) > 1:
+            combined_sentences = []
+            i = 0
+            while i < len(sentences):
+                if i == 0:
+                    combined_sentences.append(sentences[0] + sentences[1])
+                    i += 2
+                elif i == len(sentences) - 2:
+                    combined_sentences.append(sentences[i] + sentences[i + 1])
+                    break
+                else:
+                    combined_sentences.append(sentences[i] + sentences[i + 1] + sentences[i + 2])
+                    i += 3
 
+            return "".join(combined_sentences[:-1]) + ".."
 
-if __name__ == "__main__":
-    markup_afisha_events()
+        return possible_title + "..."
+
+    def get_metadata(self, markups):
+        is_free = len([m for m in markups if m[0] == "FREE"]) > 0
+        cost = [self.currency_markup.parse_currency(v) for tag, v in markups if tag == "MONEY"]
+        cost = [c for c in cost if c and len(c) > 0]
+        cost = [c for sublist in cost for c in sublist if sublist]
+        return sorted(list(set(cost))), is_free
+
+    @staticmethod
+    def _get_common_substring(s1, s2):
+        match = SequenceMatcher(None, s1, s2).find_longest_match(0, len(s1), 0, len(s2))
+        return s1[match.a: match.a + match.size]
+
+    @staticmethod
+    def _remove_trailing_comma(string):
+        string = string.strip()
+        chars = [',', '!', '.', ':', ';', '?', '-']
+        while len(string) > 0 and string[-1] in chars:
+            string = string[:-1]
+        while len(string) > 0 and string[0] in chars:
+            string = string[1:]
+        return string
