@@ -9,7 +9,7 @@ from models import *
 from interpreters import DateInterpreter, TagMapper
 from telethon import TelegramClient
 from configuration import tg_credentials, vk_credentials
-from translators import GoogleTranslator
+
 
 space_re = re.compile(r"\s+")
 dot_re = re.compile(r"\.+")
@@ -97,7 +97,7 @@ class TutByScrapper:
                 continue
 
             event_title = self._get_new_event_title(event_element)
-            description, occurrences, image_url, tags, raw_occurrences = self._parse_event_page(event_url)
+            description, occurrences, image_url, tags, raw_dates = self._parse_event_page(event_url)
             age = self._get_age_restriction(tags)
             unified_tags = []
             unified_tags.extend(self.mapper.map_tut(category))
@@ -107,8 +107,8 @@ class TutByScrapper:
             for place_name, place_and_dates in occurrences.items():
                 place = place_and_dates[0][0]
                 dates = [d[1] for d in place_and_dates]
-                yield Event(event_title, "", image_url, description, place, unified_tags, dates, event_url,
-                            age_restriction=age, raw_dates=raw_occurrences)
+                yield Event(event_title, description, place, dates, event_url,
+                            raw_tags=unified_tags, poster=image_url, age_restriction=age, raw_dates=raw_dates)
             self.listed_events.append(event_url)
 
     def _list_events_from_old_page(self, page_url, category):
@@ -118,7 +118,7 @@ class TutByScrapper:
                 if event_link in self.listed_events:
                     continue
 
-                description, occurrences, image_url, tags, raw_occurrences = self._parse_event_page(event_link)
+                description, occurrences, image_url, tags, raw_dates = self._parse_event_page(event_link)
                 age = self._get_age_restriction(tags)
                 unified_tags = []
                 unified_tags.extend(self.mapper.map_tut(category))
@@ -127,8 +127,8 @@ class TutByScrapper:
                 for place_name, places_and_dates in occurrences.items():
                     place = places_and_dates[0][0]
                     dates = [d[1] for d in places_and_dates]
-                    yield Event(event_title, "", image_url, description, place, unified_tags, dates, event_link,
-                                age_restriction=age, raw_dates=raw_occurrences)
+                    yield Event(event_title, description, place, dates, event_link,
+                                poster=image_url, raw_tags=unified_tags, age_restriction=age, raw_dates=raw_dates)
                 self.listed_events.append(event_link)
             except Exception as e:
                 print(e)
@@ -308,7 +308,7 @@ class TutByScrapper:
         place_name = str(items[0]).strip()
         place_address = items[1].text.strip()
         place_url = place_element.attrs['href']
-        return EventPlace(place_name, place_address, place_url)
+        return Place(place_name, place_address, place_url)
 
     @staticmethod
     def _get_place_new(event_page):
@@ -321,7 +321,7 @@ class TutByScrapper:
             place_name = str(items[0]).strip()
             place_address = items[1].text.strip()
             place_url = place_element.attrs['href']
-            yield EventPlace(place_name, place_address, place_url)
+            yield Place(place_name, place_address, place_url)
 
     @staticmethod
     def _get_new_schedule(event_page):
@@ -409,7 +409,7 @@ class CityDogScrapper:
             if len(places) > 0:
                 place = places[0]
             else:
-                place = EventPlace("", "", "")
+                place = Place("", "", "")
             event_source, event_cost, register_link = self._get_event_additional_info(header_element)
             full_description = self._get_full_description(description_element)
             tags = self._get_vedy_tags(description_element)
@@ -418,9 +418,9 @@ class CityDogScrapper:
             unified_tags.extend(self.mapper.map_cd(event_type))
             for tag in tags:
                 unified_tags.extend(self.mapper.map_cd(tag))
-            yield Event(event_title, short_description, image_url, full_description,
-                        place, unified_tags, dates, event_link,
-                        cost=event_cost, info=event_source, registration_info=register_link, raw_dates=[date_string])
+            yield Event(event_title, full_description, place, dates, event_link,
+                        poster=image_url, raw_tags=unified_tags, short_description=short_description,
+                        raw_cost=event_cost, registration_info=register_link, raw_dates=[date_string])
 
             self.listed_events.append(event_link)
 
@@ -449,22 +449,22 @@ class CityDogScrapper:
             event_source, event_cost, registration = self._get_event_additional_info(event_info_element)
             full_description = self._get_full_description(event_page)
             occurrences = self._get_occurrences(event_page)
-            raw_occurrences = list(self._get_raw_occurrences(event_page))
-            raw_occurrences.append(date_string)
+            raw_dates = list(self._get_raw_occurrences(event_page))
+            raw_dates.append(date_string)
             unified_tags = []
             unified_tags.extend(self.mapper.map_cd(event_type))
             if len(occurrences) > 0:
                 for place_names, dates in occurrences.items():
                     place = dates[0]
                     dates = dates[1:]
-                    yield Event(event_title, short_description, image_url, full_description, place, unified_tags,
-                                dates, event_link, cost=event_cost, registration_info=registration, info=event_source,
-                                raw_dates=raw_occurrences)
+                    yield Event(event_title, full_description, place, dates, event_link,
+                                raw_tags=unified_tags, short_description=short_description, poster=image_url,
+                                raw_cost=event_cost, registration_info=registration, raw_dates=raw_dates)
             else:
                 for place in places:
-                    yield Event(event_title, short_description, image_url, full_description, place, unified_tags,
-                                date, event_link, cost=event_cost, registration_info=registration, info=event_source,
-                                raw_dates=raw_occurrences)
+                    yield Event(event_title, full_description, place, date, event_link,
+                                raw_tags=unified_tags, short_description=short_description, poster=image_url,
+                                raw_cost=event_cost, registration_info=registration, raw_dates=raw_dates)
 
             self.listed_events.append(event_link)
 
@@ -590,7 +590,7 @@ class CityDogScrapper:
             if not place_address_element:
                 place_address_element = place_element.find("div", {"class": "address"})
             place_address = place_address_element.text.strip()
-            places.append(EventPlace(place_name, place_address, None))
+            places.append(Place(place_name, place_address, None))
         return places
 
     @staticmethod
@@ -603,16 +603,16 @@ class CityDogScrapper:
                 day = DateInterpreter.parse_day_month(day_string)
                 for place_element in day_element.find_all("div", {"class": "place"}):
                     place = CityDogScrapper._get_place(place_element)
-                    if place.place_name not in occurrences_by_place:
-                        occurrences_by_place[place.place_name] = [place]
+                    if place.name not in occurrences_by_place:
+                        occurrences_by_place[place.name] = [place]
                     sessions = CityDogScrapper._get_sessions(place_element)
                     for time in sessions:
                         time = DateInterpreter.parse_hour_minute(time)
                         date = DateInterpreter.get_date(*day, *time)
                         if type(date) == list:
-                            occurrences_by_place[place.place_name].extend(date)
+                            occurrences_by_place[place.name].extend(date)
                         else:
-                            occurrences_by_place[place.place_name].append(date)
+                            occurrences_by_place[place.name].append(date)
         return occurrences_by_place
 
     @staticmethod
@@ -640,7 +640,7 @@ class CityDogScrapper:
         place_name_element = place_element.find("div", {"class": "place-name"})
         place_name = str(list(place_name_element.children)[0])
         place_address = place_name_element.find("span").text
-        place = EventPlace(place_name, place_address, None)
+        place = Place(place_name, place_address, None)
         return place
 
     @staticmethod
@@ -702,12 +702,12 @@ class RelaxScrapper:
                 if event_link in self.listed_events:
                     continue
                 event_page = ScrapHelper.get_parsed(event_link)
-                event_image_url = event_page.find("img", {"class": "b-afisha-event__image"}).attrs['src']
+                image_url = event_page.find("img", {"class": "b-afisha-event__image"}).attrs['src']
                 event_full_info = event_page.find("div", {"class": "b-afisha-layout-theater_full"})
                 event_cost, event_genre, event_info_number, working_hours, registration_info, age_restriction \
                     = self._get_metadata(event_full_info)
                 occurrences = self._get_occurrences(event_full_info)
-                raw_occurrences = list(self._get_raw_occurrences(event_full_info))
+                raw_dates = list(self._get_raw_occurrences(event_full_info))
                 description = self._get_description(event_full_info)
                 tags = []
                 if event_genre:
@@ -719,7 +719,7 @@ class RelaxScrapper:
                     place = dates[0]
                     dates = dates[1:]
                     if working_hours:
-                        raw_occurrences.append(working_hours)
+                        raw_dates.append(working_hours)
                         schedule = DateInterpreter.parse_relax_schedule(working_hours)
                         if not schedule:
                             continue
@@ -733,9 +733,9 @@ class RelaxScrapper:
                     for tag in tags:
                         unified_tags.extend(self.mapper.map_relax(tag))
 
-                    yield Event(event_title, "", event_image_url, description, place, unified_tags, dates, event_link,
-                                cost=event_cost, registration_info=registration_info,
-                                info=event_info_number, age_restriction=age_restriction, raw_dates=raw_occurrences)
+                    yield Event(event_title, description, place, dates, event_link,
+                                raw_cost=event_cost, poster=image_url, registration_info=registration_info,
+                                raw_tags=unified_tags, age_restriction=age_restriction, raw_dates=raw_dates)
 
                 self.listed_events.append(event_link)
 
@@ -776,7 +776,7 @@ class RelaxScrapper:
         times_element = event_full_info.find("div", {"class": "schedule"})
         place = RelaxScrapper._get_place(event_full_info)
         if place:
-            occurrences_by_place[place.place_name] = [place]
+            occurrences_by_place[place.name] = [place]
         if not times_element:
             times_element = event_full_info.find("div", {"id": "theatre-table"})
         prev_date = None
@@ -789,9 +789,9 @@ class RelaxScrapper:
                 place_name = ScrapHelper.get_string(schedule_place_element)
 
             if place_name:
-                schedule_place = EventPlace(place_name, None, None)
-                if schedule_place.place_name not in occurrences_by_place:
-                    occurrences_by_place[schedule_place.place_name] = [schedule_place]
+                schedule_place = Place(place_name, None, None)
+                if schedule_place.name not in occurrences_by_place:
+                    occurrences_by_place[schedule_place.name] = [schedule_place]
             else:
                 schedule_place = place
 
@@ -814,9 +814,9 @@ class RelaxScrapper:
                 if type(date) != EventDateRange:
                     date = DateInterpreter.get_day(*date)
             if type(date) == list:
-                occurrences_by_place[schedule_place.place_name].extend(date)
+                occurrences_by_place[schedule_place.name].extend(date)
             else:
-                occurrences_by_place[schedule_place.place_name].append(date)
+                occurrences_by_place[schedule_place.name].append(date)
         return occurrences_by_place
 
     @staticmethod
@@ -845,7 +845,7 @@ class RelaxScrapper:
             return None
         place_name = ScrapHelper.get_string(place_element)
         place_link = place_element.attrs['href']
-        return EventPlace(place_name, None, place_link)
+        return Place(place_name, None, place_link)
 
     @staticmethod
     def _get_place(event_info_element: bs4.element.PageElement):
@@ -863,7 +863,7 @@ class RelaxScrapper:
                 place_address = place_address_element.find("span")
             place_address = ScrapHelper.get_string(place_address)
 
-        return EventPlace(place_name, place_address, place_link)
+        return Place(place_name, place_address, place_link)
 
     @staticmethod
     def _get_description(event_info_element: bs4.element.PageElement):
@@ -951,72 +951,36 @@ class TelegramEventFetcher:
     api_hash = tg_credentials['api_hash']
     channels = [-1001149046377]
 
-    time_emoji = '🕰'
-    place_emoji = '🏛'
-
     bold_re = re.compile(r"(\*\*([^*]*)\*\*)")
     italic_re = re.compile(r"(__([^_]*)__)")
 
-    translator = GoogleTranslator()
-
     async def fetch_events(self):
         async with TelegramClient('anon', self.api_id, self.api_hash) as client:
-            for channel_name in self.channels:
-                channel = await client.get_entity(channel_name)
+            for channel_id in self.channels:
+                channel = await client.get_entity(channel_id)
+                channel_name = channel.username
                 messages = await client.get_messages(channel, limit=2000)
                 for m in messages:
-                    raw_text = m.text
+                    raw_text = m.raw_text
                     if not raw_text:
                         continue
-                    text = m.message
 
-                    text = text.replace(self.time_emoji, "<TIME>")
-                    text = text.replace(self.place_emoji, "<PLACE>")
-
-                    if detect_lang(text) == "by":
+                    if detect_lang(raw_text) == "by":
                         continue
 
                     title = None
-                    times = []
-                    place = None
 
-                    for value, inner_value in self.bold_re.findall(raw_text):
+                    for value, inner_value in self.bold_re.findall(m.text):
                         title = inner_value.replace('\n', ' ').strip()
                         break
 
-                    lines = [l.strip() for l in text.split('\n') if len(l.strip()) > 0]
+                    text = clean_text(raw_text)
+                    url = "https://t.me/%s/%s" % (channel_name, m.id)
+                    image_bytes = None
+                    if 'MessageMediaPhoto' in str(type(m.media)):
+                        image_bytes = await client.download_media(m, file=bytes, thumb=-1)
 
-                    for i, l in enumerate(lines):
-                        if "<TIME>" in l:
-                            start_index = l.find("<TIME>")
-                            time = l[start_index + len("<TIME>"):].strip()
-                            times.append(time)
-                        elif "<PLACE>" in l:
-                            start_index = l.find("<PLACE>")
-                            place = l[start_index + len("<PLACE>"):].strip()
-                    if not title:
-                        title = lines[0]
-                    if not place:
-                        continue
-
-                    text = text.replace("<TIME>", "").replace("<PLACE>", "")
-
-                    if title:
-                        start = text.find(title)
-                        end = start + len(title)
-                        title = (start, end)
-                    if len(times) > 0:
-                        time_tags = []
-                        for time in times:
-                            start = text.find(time)
-                            end = start + len(time)
-                            time_tags.append((start, end))
-                    if place:
-                        start = text.find(place)
-                        end = start + len(place)
-                        place = (start, end)
-
-                    yield {"title": title, "dates": time_tags, "place": place, "text": text}
+                    yield {"title": title, "text": text, "url": url, "timestamp": m.date, "poster_bytes": image_bytes}
 
 
 class VkEventFetcher:
@@ -1025,23 +989,39 @@ class VkEventFetcher:
     vk_communities = [57422635, 47596848, 8788887]
     club_re = re.compile(r"(\[club\d+\|([^\]]+)\])")
 
-    stop_words = ["победитель", "выиграй", "выигрывай"]
+    stop_words = ["победитель", "выиграй", "выигрывай", "выигрывай"]
 
     def fetch_events(self):
         vk_session = vk_api.VkApi(self.phone_num, self.password)
         vk_session.auth()
         api = vk_session.get_api()
         for group_id in self.vk_communities:
-            for offset in range(10):
+            for offset in range(15):
                 response = api.wall.get(owner_id=-group_id, count=100, filter='owner', offset=offset * 100)
                 posts = response['items']
                 for post in posts:
                     text = post['text']
+                    post_id = post['id']
+                    poster = None
+                    if 'attachments' in post:
+                        photo_attachments = [a for a in post['attachments'] if a['type'] == 'photo']
+                        if len(photo_attachments) > 0:
+                            attachment = photo_attachments[0]['photo']
+                            image = max(attachment['sizes'], key=lambda p: p['height'])
+                            poster = image['url']
+
+                    url = "https://vk.com/wall-%s_%s" % (group_id, post_id)
+                    timestamp = datetime.datetime.fromtimestamp(post['date'])
                     if not text or len(text.split(' ')) < 8:
                         continue
                     if any(s in text.lower() for s in self.stop_words):
                         continue
-                    yield {"text": self.clean_text(text), "place": None, "date": None}
+
+                    if detect_lang(text) == "by":
+                        continue
+                    text = self.clean_text(text)
+
+                    yield {"text": self.clean_text(text), "url": url, "timestamp": timestamp, 'poster': poster}
 
     def clean_text(self, text):
         for match in self.club_re.finditer(text):

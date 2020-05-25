@@ -1,62 +1,6 @@
 from fastai.text import load_learner
 from preprocess import TextPreprocessor
-from models import Event
-
-event_type_mapping = {
-    "Выставка": "exhibition",
-    "Встреча": "lecture",
-    "Вечеринка": "party",
-    "Дегустация": "food",
-    "Занятие": "training",
-    "Интенсив": "training",
-    "Игра": "game",
-    "Квест": "game",
-    "Концерт": "concert",
-    "Квиз": "game",
-    "Конкурс": "compete",
-    "Конференция": "festival",
-    "Лекция": "lecture",
-    "Мастер-класс": "training",
-    "Модный показ": "show",
-    "Просмотр": "view",
-    "Презентация": "lecture",
-    "Разговорный клуб": "training",
-    "Семинар": "training",
-    "Стендап": "standup",
-    "Спектакль": "theater",
-    "Спортивное мероприятие": "sport",
-    "Тренинг": "training",
-    "Турнир": "compete",
-    "Фестиваль": "festival",
-    "Хакатон": "compete",
-    "Шоу": "show",
-    "Экскурсия": "tour",
-    "Ярмарка": "market"
-}
-
-
-event_types = [
-    "compete",
-    "concert",
-    "concert_programm",
-    "exhibition",
-    "festival",
-    "food",
-    "free",
-    "game",
-    "lecture",
-    "market",
-    "online",
-    "open air",
-    "party",
-    "show",
-    "sport",
-    "standup",
-    "theatre",
-    "tour",
-    "training",
-    "view"
-]
+from models import Event, event_types
 
 
 class TypeClassifier:

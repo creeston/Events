@@ -1,4 +1,4 @@
-from markup import PlaceMarkup, MarkupCurrency
+from markup import PlaceMarkup, MarkupCurrency, MarkupRegister
 
 place_markup = PlaceMarkup()
 
@@ -35,4 +35,10 @@ result = currency_markup.parse_currency("8 - 12 руб")
 assert result == [8, 12]
 
 result = currency_markup.parse_currency("12.50 рублей")
-assert result == 12.5
+assert result == [12.5]
+
+
+register_markup = MarkupRegister()
+result = register_markup.markup("Вход бесплатный, но по регистрации!")
+
+assert len(result) == 1

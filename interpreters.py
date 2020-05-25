@@ -44,12 +44,12 @@ def get_optional_year(groups):
     if len(groups) > 0 and groups[1]:
         return int(groups[1])
     else:
-        return current_year
+        return None
 
 
 # 13 мая
 # group[0] -> day, group[2] -> month
-day_month_re = r"(\d{1,2})(-го)*\s*(%s)" % "|".join([v.lower() for v in month_mapping.keys()])
+day_month_re = r"([1-9]|1\d|2\d|3[01])(-го)*\s*(%s)" % "|".join([v.lower() for v in month_mapping.keys()])
 
 
 def get_day_month(groups):
@@ -61,7 +61,7 @@ def get_day_month(groups):
 # 13 мая
 # 13
 # group[0] -> day, group[2] -> month
-day_optional_month_re = r"(\d{1,2})(-го)*\s*(%s)*" % "|".join([v.lower() for v in month_mapping.keys()])
+day_optional_month_re = r"([1-9]|1\d|2\d|3[01])(-го)*\s*(%s)*" % "|".join([v.lower() for v in month_mapping.keys()])
 
 
 def get_day_optional_month(groups):
@@ -101,7 +101,7 @@ def get_day_month_year(groups):
 
 # 19.03.2020
 # group[0] -> day, group[1] -> month, group[2] -> year
-date_re = r"(\d{1,2})\s?\.\s?(\d{1,2})\s?\.\s?(\d{2,4})(\s*(г|г\.|года|))*"
+date_re = r"([1-9]|1\d|2\d|3[01])\s?\.\s?([1-9]|0[1-9]|1[0-2])\s?\.\s?(\d{2,4})(\s*(г|г\.|года|))*"
 date_regex = regex.compile(date_re)
 
 
@@ -154,6 +154,11 @@ from_day_to_day_month = regex.compile(r"с\s*" + day_optional_month_optional_yea
 def get_from_day_to_day(groups):
     start = get_day_optional_month_optional_year(groups[:6])
     end = get_day_month_year(groups[7:])
+
+    if end['year'] and not start['year']:
+        start['year'] = end['year']
+    if end['month'] and not start['month']:
+        start['month'] = end['month']
     return {"start": start, "end": end}
 
 
@@ -168,6 +173,10 @@ def get_day_hyphen_day(groups):
     start = get_day_optional_month_optional_year(groups[:6])
     delimiter = groups[6]
     end = get_day_month_year(groups[7:])
+    if end['year'] and not start['year']:
+        start['year'] = end['year']
+    if end['month'] and not start['month']:
+        start['month'] = end['month']
     if delimiter == ",":
         return [start, end]
     else:
@@ -200,7 +209,7 @@ weekday_before = regex.compile(r"\p{L}+[,\s]+" + day_month_re)
 # 3 часа
 # 12 часов
 # group[0] -> hour, group[1] -> minute, group[3] -> hour
-time_regex = r"[\sв]*(\d{1,2})[:.-](\d{1,2})(\s*мск)*|(\d{1,2})\s*(часов|часа)"
+time_regex = r"[\sв]*(\d|0\d|1\d|2[0-4])[:.-]([0-5]\d|60)(\s*мск)*|(\d|0\d|1\d|2[0-4])\s*(часов|часа)"
 time_re = regex.compile(time_regex)
 
 

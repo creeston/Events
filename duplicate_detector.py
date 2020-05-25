@@ -1,9 +1,10 @@
 from difflib import SequenceMatcher
-from models import group_by_dates
+from typing import List
+from models import group_by_dates, Event
 
 
 class DuplicateEventsRemover:
-    def remove_duplicated_events(self, events):
+    def remove_duplicated_events(self, events: List[Event]):
         events_by_dates = group_by_dates(events)
         filtered_events = []
         for dt, grouped_events in events_by_dates.items():
@@ -12,7 +13,7 @@ class DuplicateEventsRemover:
                 duplicates_list = self.detect_duplicates(grouped_events)
                 unique_events = []
                 for duplicates in duplicates_list:
-                    unique_event = max(duplicates, key=lambda e: len(self._get_event_text(e)))
+                    unique_event = max(duplicates, key=lambda e: len(e.to_str()))
                     unique_events.append(unique_event)
             else:
                 unique_events = grouped_events
@@ -45,14 +46,12 @@ class DuplicateEventsRemover:
         return [max(duplicates, key=lambda d: len(d)) for duplicates in duplicates_list]
 
     @staticmethod
-    def _get_place_name(event):
-        if 'place' not in event:
+    def _get_place_name(event: Event):
+        if not event.place:
             return None
-        if 'name' not in event['place']:
-            return None
-        return event['place']['name']
+        return event.place.name
 
-    def detect_duplicates(self, events):
+    def detect_duplicates(self, events: List[Event]) -> List[List[Event]]:
         removed_idx = set()
         duplicates_list = []
         for i, current_event in enumerate(events):
@@ -64,7 +63,7 @@ class DuplicateEventsRemover:
                 j += (i + 1)
                 if j in removed_idx:
                     continue
-                current_text, event_text = self._get_event_text(current_event), self._get_event_text(event)
+                current_text, event_text = current_event.to_str(), event.to_str()
                 if len(current_text) == 0 or len(event_text) == 0:
                     continue
 
@@ -73,23 +72,14 @@ class DuplicateEventsRemover:
                     duplicates.append(event)
                     removed_idx.add(j)
                 elif self._get_place_name(current_event) == self._get_place_name(event) and \
-                        'title' in current_event and 'title' in event:
-                    res = self._similar(current_event['title'], event['title'])
+                        current_event.title and event.title:
+                    res = self._similar(current_event.title, event.title)
                     if res > 0.7:
                         duplicates.append(event)
                         removed_idx.add(j)
 
             duplicates_list.append(duplicates)
         return duplicates_list
-
-    @staticmethod
-    def _get_event_text(event):
-        event_text = []
-        if 'title' in event:
-            event_text.append(event['title'])
-        if 'description' in event:
-            event_text.append(event['description'])
-        return "\n".join(event_text)
 
     @staticmethod
     def _similar(a, b):

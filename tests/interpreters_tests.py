@@ -2,7 +2,7 @@ import datetime
 from interpreters import time_re, time_range_re, try_parse_date_string, weekday_after, DateInterpreter
 from models import EventDateRange
 
-assert try_parse_date_string("Бачата для начинающих \"с нуля\". 19:00 - 23:00")[0]
+#assert try_parse_date_string("Бачата для начинающих \"с нуля\". 19:00 - 23:00")[0]
 
 assert time_re.fullmatch("18:00")
 assert time_range_re.fullmatch("18:00 до 19:30")

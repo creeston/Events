@@ -1,6 +1,10 @@
 import json
 import re
+from typing import List, Optional
+
 import regex
+import copy
+import datetime
 
 from pullenti_wrapper.langs import (set_langs, RU)
 from pullenti_wrapper.processor import (Processor, DATE, ORGANIZATION, MONEY, ADDRESS)
@@ -10,9 +14,11 @@ from natasha import (AddressExtractor, OrganisationExtractor, DatesExtractor)
 from deeppavlov import configs, build_model
 from interpreters import try_parse_date_string, hyphens
 from duplicate_detector import DuplicateEventsRemover
+from models import Event, Place, datetime_from_json, EventDateRange
 
 
 punct_re = re.compile(r"[.,;!?]")
+current_year = datetime.datetime.now().year
 
 
 def load_json(filename):
@@ -108,7 +114,7 @@ class PlaceMarkup:
         places = [places for address, places in self.address_place_dict.items()]
         self.places = list(set([p for sublist in places for p in sublist]))
 
-    def markup(self, text):
+    def markup(self, text: str):
         return markup_by_list(self.places, text, "PLACE")
 
 
@@ -147,6 +153,13 @@ class TypeDetector:
         return result
 
 
+class MarkupRegister:
+    register = ["необходима регистрация", "регистрация", "с регистрацией", "по регистрации"]
+
+    def markup(self, text):
+        return markup_by_list(self.register, text, "REGISTER", 0.9)
+
+
 class MarkupCurrency:
     currency = [r"б\.?\s*р\.?", "byn", r"руб\.?", "рублей", r"р[^\w]"]
     free = ["свободный", "бесплатно", "free"]
@@ -161,14 +174,15 @@ class MarkupCurrency:
             result.append(("MONEY", *match.span()))
         for match in self.currency_re.finditer(text):
             start, end = match.span()
-            if len([s for t, s, e in result if start >= s and start <= e]) > 0:
+            if len([s for t, s, e in result if s <= start <= e]) > 0:
                 continue
             result.append(("MONEY", *match.span()))
         free_results = markup_by_list(self.free, text, "FREE", 0.8)
         result.extend([(t, s, e) for t, s, e in free_results])
         return result
 
-    def get_currency(self, groups):
+    @staticmethod
+    def get_currency(groups):
         value = 0
         whole_part = groups[0]
         fract_part = groups[2]
@@ -315,19 +329,20 @@ class NamedEntityExtractor:
             MarkupCurrency(),
             PullEntityMarkup(),
             NatashaMarkup(),
-            DeepPavlovMarkup()
+            DeepPavlovMarkup(),
+            MarkupRegister()
         ]
         self.structured_data_extractor = DataExtractor()
 
-    def extract_entities_from_event(self, event):
-        markups = list(self.get_event_markup(event))
+    def extract_entities_from_event(self, event_text: str) -> Optional[Event]:
+        markups = list(self.get_event_markup(event_text))
         if len(markups) == 0:
             return None
 
-        entities = self.structured_data_extractor.get_structured_data_from_markups(markups, event)
-        return entities
+        event = self.structured_data_extractor.get_structured_data_from_markups(markups, event_text)
+        return event
 
-    def get_event_markup(self, e):
+    def get_event_markup(self, e: str):
         markups = self.markup_event_text(e)
         if len(markups) == 0:
             return
@@ -348,7 +363,7 @@ class NamedEntityExtractor:
                     continue
             yield tag, value
 
-    def markup_event_text(self, text):
+    def markup_event_text(self, text: str):
         result = []
 
         for markup in self.markupers:
@@ -398,8 +413,8 @@ class DataExtractor:
         self.duplicate_detector = DuplicateEventsRemover()
         self.currency_markup = MarkupCurrency()
 
-    def get_structured_data_from_markups(self, text_markup, text):
-        dates = self.get_dates(text_markup)
+    def get_structured_data_from_markups(self, text_markup: List, text: str):
+        dates, raw_dates = self.get_dates(text_markup)
         address, places = self.get_place(text_markup)
         if address:
             address = self._remove_trailing_comma(address)
@@ -413,31 +428,77 @@ class DataExtractor:
                       and "начал" not in p]
             places = self.duplicate_detector.remove_duplicate_strings(places)
 
+        place = Place(name=",".join(places), address=address)
         title = self.get_title(text)
-        cost, if_free = self.get_metadata(text_markup)
+        cost, is_free, is_register = self.get_metadata(text_markup)
         if len(cost) > 0:
             for c in [v for tag, v in text_markup if tag == "MONEY"]:
                 for i in range(len(places)):
                     places[i] = places[i].replace(c, "")
 
-        return {"dates": dates, "address": address, "place": places,
-                "title": title, "is_free": if_free, "cost": cost}
+        event_dates = []
+        for date in dates:
+            if "start_time" in date and 'day' in date:
+                if 'year' not in date or not date['year']:
+                    date['year'] = current_year
+                start_date = copy.deepcopy(date)
+                del start_date['start_time']
+                start_date['hour'] = date['start_time']['hour']
+                start_date['minute'] = date['start_time']['minute']
+                end_date = None
+                if 'end_time' in date:
+                    end_date = copy.deepcopy(date)
+                    del start_date['end_time']
+                    del end_date['end_time']
+                    del end_date['start_time']
+                    end_date['hour'] = date['end_time']['hour']
+                    end_date['minute'] = date['end_time']['minute']
+                    end_date = datetime_from_json(end_date)
+
+                start_date = datetime_from_json(start_date)
+                event_dates.append(EventDateRange(start_day=start_date, end_day=end_date))
+            if "day" in date:
+                if 'year' not in date or not date['year']:
+                    date['year'] = current_year
+                date = datetime_from_json(date)
+                if not date:
+                    continue
+            elif "start" in date:
+                start, end = None, None
+                if date['start']:
+                    if 'year' not in date['start'] or not date['start']['year']:
+                        date['start']['year'] = current_year
+                    start = datetime_from_json(date['start'])
+                if date['end']:
+                    if 'year' not in date['end'] or not date['end']['year']:
+                        date['end']['year'] = current_year
+                    end = datetime_from_json(date['end'])
+                event_dates.append(EventDateRange(start_day=start, end_day=end))
+
+        tags = []
+        if is_free:
+            tags.append("free")
+        if is_register:
+            tags.append("register")
+
+        return Event(title, text, place, event_dates, "", cost=cost, raw_dates=raw_dates, event_tags=tags)
 
     def get_dates(self, markups):
         dates = []
+        raw_dates = []
         for t, value in [m for m in markups if m[0] in ["DATE", "DATERANGE", "TIME"]]:
             value = value.lower().replace('г. г.', "г.")
             match, value = try_parse_date_string(value)
             if not match:
                 continue
-            if "start" in match and match["start"] and "day" in match["start"] and match['start']['day']:
-                if "month" not in match['start'] or not match['start']['month']:
-                    match['start']['month'] = match['end']['month']
+
             dates.append(match)
+            raw_dates.append(value)
 
         unique_dates = []
         self.get_unique_dates(dates, unique_dates)
-        return unique_dates
+        raw_dates = list(set(raw_dates))
+        return unique_dates, raw_dates
 
     def get_unique_dates(self, dates, unique_list):
         ranges = [d for d in dates if "start" in d]
@@ -598,10 +659,11 @@ class DataExtractor:
 
     def get_metadata(self, markups):
         is_free = len([m for m in markups if m[0] == "FREE"]) > 0
+        is_register = len([m for m in markups if m[0] == "REGISTER"]) > 0
         cost = [self.currency_markup.parse_currency(v) for tag, v in markups if tag == "MONEY"]
         cost = [c for c in cost if c and len(c) > 0]
         cost = [c for sublist in cost for c in sublist if sublist]
-        return sorted(list(set(cost))), is_free
+        return sorted(list(set(cost))), is_free, is_register
 
     @staticmethod
     def _get_common_substring(s1, s2):
