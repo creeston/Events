@@ -1,10 +1,12 @@
 import sys
 import os
 
+from models import Event
+
 sys.path.append(os.path.abspath("../"))
 
 
-from flask import Flask, jsonify, request, make_response, _request_ctx_stack
+from flask import Flask, jsonify, request, _request_ctx_stack
 from sql_storage import EventRepository
 from datetime import datetime
 from flask_cors import CORS
@@ -19,8 +21,9 @@ CORS(app)
 def get_events():
     content = request.json
     date = datetime(year=content['year'], day=content['day'], month=content['month'])
+    username = _request_ctx_stack.top.current_user['sub']
     with EventRepository() as repository:
-        events = repository.list_events_by_date(date)
+        events = repository.list_events_by_date(date, username)
 
     return jsonify([e.to_json() for e in events])
 
@@ -32,9 +35,28 @@ def exclude_event():
     event_id = int(content['event_id'])
     username = _request_ctx_stack.top.current_user['sub']
     with EventRepository() as repository:
-        repository.exclude_event(event_id, username)
+        repository.exclude_event(event_id, username, 0)
 
     resp = jsonify(success=True)
+    return resp
+
+
+@app.route('/events/modify', methods=['POST'])
+@requires_auth
+def modify_event():
+    req_json = request.json
+    event_json = req_json[0]
+    original_json = req_json[1]
+    username = _request_ctx_stack.top.current_user['sub']
+    with EventRepository() as repository:
+        event_id, source_event_id = repository.update_event(
+            Event.from_json(event_json),
+            Event.from_json(original_json),
+            username
+        )
+        repository.exclude_event(source_event_id, username, 1)
+
+    resp = jsonify({"event_id": int(event_id), "source_event_id": int(source_event_id)})
     return resp
 
 

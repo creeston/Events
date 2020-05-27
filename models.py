@@ -72,6 +72,17 @@ class EventDateRange:
     def __str__(self):
         return "from %s to %s" % (self.start, self.end)
 
+    def __eq__(self, other):
+        if self.start is None and other.start is not None:
+            return False
+        if self.start is not None and other.start is None:
+            return False
+        if self.start is not None and other.start is not None and other.start != self.start:
+            return False
+        if self.end != other.end:
+            return False
+        return True
+
     def to_json(self):
         return {
             "start": date_to_json(self.start),
@@ -81,13 +92,14 @@ class EventDateRange:
 
     @staticmethod
     def from_json(j):
-        start, end = None, None
+        start, end, schedule = None, None, None
         if "start" in j and j['start']:
             start = date_from_json(j['start'])
         if "end" in j and j["end"]:
             end = date_from_json(j['end'])
-        return EventDateRange(start_day=start, end_day=end,
-                              week_schedule=j['schedule'])
+        if 'schedule' in j and j['schedule']:
+            schedule = j['schedule']
+        return EventDateRange(start_day=start, end_day=end, week_schedule=schedule)
 
 
 class Event:
@@ -95,7 +107,7 @@ class Event:
                  poster: str = None, short_description: str = None, event_tags: List[str] = None,
                  registration_info: str = None, age_restriction: str = None, cost: List[int] = None,
                  raw_dates=None, raw_cost: str = None, raw_tags: List[str] = None,
-                 timestamp=None, event_id=None):
+                 timestamp=None, event_id=None, source_event_id=None):
         self.title = title
         self.short_description = short_description
         self.poster = poster
@@ -115,6 +127,7 @@ class Event:
         self.raw_cost = raw_cost
         self.raw_tags = raw_tags
         self.event_id = event_id
+        self.source_event_id = source_event_id
 
     def get_first_date(self):
         for d in self.event_dates:
@@ -132,6 +145,7 @@ class Event:
         reg_info, cost, age, info, raw_dates = None, None, None, None, None
         title, short, description, poster, place, tags, url, timestamp = None, None, None, None, None, None, None, None
         raw_tags, raw_cost = None, None
+        event_id, source_event_id = None, None
 
         if 'registration_info' in j:
             reg_info = j['registration_info']
@@ -169,10 +183,15 @@ class Event:
             url = j['url']
         if 'timestamp' in j:
             timestamp = datetime.fromtimestamp(j['timestamp'])
+        if 'event_id' in j:
+            event_id = j['event_id']
+        if 'source_event_id' in j:
+            source_event_id = j['source_event_id']
 
         return Event(title, description, place, dates, url, short_description=short, poster=poster,
                      registration_info=reg_info, age_restriction=age, cost=cost, raw_dates=raw_dates,
-                     event_tags=tags, raw_tags=raw_tags, timestamp=timestamp, raw_cost=raw_cost)
+                     event_tags=tags, raw_tags=raw_tags, timestamp=timestamp, raw_cost=raw_cost,
+                     event_id=event_id, source_event_id=source_event_id)
 
     def to_json(self) -> dict:
         result = {
@@ -188,8 +207,12 @@ class Event:
             "raw_dates": self.raw_dates,
             "raw_tags": self.raw_tags,
             "raw_cost": self.raw_cost,
-            "event_id": self.event_id
         }
+
+        if self.event_id:
+            result['event_id'] = self.event_id
+        if self.source_event_id:
+            result['source_event_id'] = self.source_event_id
 
         if self.timestamp:
             result['timestamp'] = self.timestamp.replace(tzinfo=timezone.utc).timestamp()
