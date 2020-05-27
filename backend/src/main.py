@@ -60,6 +60,19 @@ def modify_event():
     return resp
 
 
+@app.route('/events/duplicate', methods=['POST'])
+@requires_auth
+def report_duplicated_events():
+    req_json = request.json
+    events = [Event.from_json(j) for j in req_json]
+    username = _request_ctx_stack.top.current_user['sub']
+    with EventRepository() as repository:
+        repository.mark_events_as_duplicate(events, username)
+
+    resp = jsonify(success=True)
+    return resp
+
+
 @app.errorhandler(AuthError)
 def handle_auth_error(ex):
     response = jsonify(ex.error)

@@ -22,6 +22,7 @@ class EventRepository:
     sql_create_place = "[dbo].[CreatePlace] ?, ?, ?"
     sql_exclude_event = "[dbo].[ExcludeEvent] ?, ?, ?"
     sql_list_event_dates = "[dbo].[ListEventDates] ?"
+    sql_mark_event_as_duplicate = "[dbo].[MarkEventAsDuplicate] ?, ?, ?"
 
     def __init__(self):
         self.connection = pyodbc.connect(
@@ -77,7 +78,7 @@ class EventRepository:
 
     def exclude_event(self, event_id: int, username: str, reason: int):
         """
-        reason: 0 if event is not event, 1 if event was overridden
+        reason: 0 if event is not event, 1 if event was overridden, 2 if duplicate
         """
         self.cursor.execute(self.sql_exclude_event, (event_id, username, reason))
         self.connection.commit()
@@ -125,6 +126,13 @@ class EventRepository:
         for date in query_result:
             dates.append(date[0])
         return dates
+
+    def mark_events_as_duplicate(self, events: List[Event], username: str):
+        original = events[0]
+        duplicates = events[1:]
+        for duplicate in duplicates:
+            self.cursor.execute(self.sql_mark_event_as_duplicate, (duplicate.event_id, original.event_id, username))
+        self.connection.commit()
 
     def list_events_by_date(self, date, username) -> List[Event]:
         self.cursor.execute(self.sql_list_event_by_date_for_user, (date, username))
