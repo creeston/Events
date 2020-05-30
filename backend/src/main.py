@@ -1,6 +1,7 @@
 import sys
 
 sys.path.append("../")
+sys.path.append(".")
 
 from models import Event
 from flask import Flask, jsonify, request, _request_ctx_stack
