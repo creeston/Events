@@ -8,7 +8,7 @@ from markup import NamedEntityExtractor
 from scrappers import VkEventFetcher, TelegramEventFetcher, UnstructuredEvent, parse_event
 from classifier import TypeClassifier
 from cloudinary import uploader
-from configuration import classifier_model, cloudinary_config
+from configuration import cloudinary_config
 from typing import List
 
 
@@ -31,7 +31,7 @@ def parse_events(events: List[UnstructuredEvent], classifier, extractor):
 
 async def get_unstructured_events(folder):
     extractor = NamedEntityExtractor()
-    classifier = TypeClassifier(classifier_model)
+    classifier = TypeClassifier("C:\\Projects\\Research\\Events\\data\\model")
 
     today = datetime.datetime.now()
     folder_name = "%s\\%s_%s_%s" % (folder, today.year, today.month, today.day)
