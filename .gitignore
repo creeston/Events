@@ -4,3 +4,4 @@ vcs.xml
 .ipynb_checkpoints/
 .idea/misc.xml
 anon.session
+backend/venv/

@@ -134,12 +134,21 @@ class EventRepository:
             self.cursor.execute(self.sql_mark_event_as_duplicate, (duplicate.event_id, original.event_id, username))
         self.connection.commit()
 
-    def list_events_by_date(self, date, username) -> List[Event]:
+    def list_events_by_date_for_user(self, date, username) -> List[Event]:
         self.cursor.execute(self.sql_list_event_by_date_for_user, (date, username))
-        events = []
         query_result = self.cursor.fetchall()
-        for event_id, title, poster, short, desc, source, cost, dates, start_dates, end_dates, \
-                place_name, place_address, place_url, types, source_event_id in query_result:
+        return self._get_events_from_query_result(query_result)
+
+    def list_events_by_date(self, date) -> List[Event]:
+        self.cursor.execute(self.sql_list_event_by_date, date)
+        query_result = self.cursor.fetchall()
+        return self._get_events_from_query_result(query_result)
+
+    @staticmethod
+    def _get_events_from_query_result(query_result):
+        events = []
+        for event_id, title, poster, short, desc, source, cost, dates, start_dates, end_dates, place_name, \
+                place_address, place_url, types, source_event_id in query_result:
 
             if types:
                 types = [t for t in types.split(' ')]

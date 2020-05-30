@@ -192,7 +192,7 @@ class MarkupCurrency:
             value += int(fract_part) / 100
         return value
 
-    def parse_currency(self, currency_string):
+    def parse_currency(self, currency_string) -> Optional[List[int]]:
         match = self.currency_re.fullmatch(currency_string)
         if match:
             return [self.get_currency(match.groups())]
@@ -334,12 +334,12 @@ class NamedEntityExtractor:
         ]
         self.structured_data_extractor = DataExtractor()
 
-    def extract_entities_from_event(self, event_text: str) -> Optional[Event]:
+    def extract_entities_from_event(self, event_text: str, timestamp: datetime.datetime) -> Optional[Event]:
         markups = list(self.get_event_markup(event_text))
         if len(markups) == 0:
             return None
 
-        event = self.structured_data_extractor.get_structured_data_from_markups(markups, event_text)
+        event = self.structured_data_extractor.get_structured_data_from_markups(markups, event_text, timestamp)
         return event
 
     def get_event_markup(self, e: str):
@@ -413,7 +413,12 @@ class DataExtractor:
         self.duplicate_detector = DuplicateEventsRemover()
         self.currency_markup = MarkupCurrency()
 
-    def get_structured_data_from_markups(self, text_markup: List, text: str):
+    def get_structured_data_from_markups(self, text_markup: List, text: str, timestamp: datetime.datetime):
+        if timestamp:
+            default_year = timestamp.year
+        else:
+            default_year = current_year
+
         dates, raw_dates = self.get_dates(text_markup)
         address, places = self.get_place(text_markup)
         if address:
@@ -440,7 +445,7 @@ class DataExtractor:
         for date in dates:
             if "start_time" in date and 'day' in date:
                 if 'year' not in date or not date['year']:
-                    date['year'] = current_year
+                    date['year'] = default_year
                 start_date = copy.deepcopy(date)
                 del start_date['start_time']
                 start_date['hour'] = date['start_time']['hour']
@@ -459,7 +464,7 @@ class DataExtractor:
                 event_dates.append(EventDateRange(start_day=start_date, end_day=end_date))
             if "day" in date:
                 if 'year' not in date or not date['year']:
-                    date['year'] = current_year
+                    date['year'] = default_year
                 date = datetime_from_json(date)
                 if not date:
                     continue
@@ -467,11 +472,11 @@ class DataExtractor:
                 start, end = None, None
                 if date['start']:
                     if 'year' not in date['start'] or not date['start']['year']:
-                        date['start']['year'] = current_year
+                        date['start']['year'] = default_year
                     start = datetime_from_json(date['start'])
                 if date['end']:
                     if 'year' not in date['end'] or not date['end']['year']:
-                        date['end']['year'] = current_year
+                        date['end']['year'] = default_year
                     end = datetime_from_json(date['end'])
                 event_dates.append(EventDateRange(start_day=start, end_day=end))
 

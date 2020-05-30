@@ -1,16 +1,13 @@
 import sys
-import os
+
+sys.path.append("../")
 
 from models import Event
-
-sys.path.append(os.path.abspath("../"))
-
-
 from flask import Flask, jsonify, request, _request_ctx_stack
 from sql_storage import EventRepository
 from datetime import datetime
 from flask_cors import CORS
-from auth import requires_auth, AuthError
+from .auth import requires_auth, AuthError
 
 app = Flask(__name__)
 CORS(app)
@@ -23,7 +20,7 @@ def get_events():
     date = datetime(year=content['year'], day=content['day'], month=content['month'])
     username = _request_ctx_stack.top.current_user['sub']
     with EventRepository() as repository:
-        events = repository.list_events_by_date(date, username)
+        events = repository.list_events_by_date_for_user(date, username)
 
     return jsonify([e.to_json() for e in events])
 

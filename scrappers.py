@@ -3,19 +3,25 @@ import bs4
 import vk_api
 import re
 import demoji
+import traceback
+import sys
 
-from time import sleep
-from models import *
 from interpreters import DateInterpreter, TagMapper
 from telethon import TelegramClient
 from configuration import tg_credentials, vk_credentials
+from time import sleep
+from datetime import datetime
+from models import Event, EventDateRange, Place, event_type_mapping
+from markup import MarkupCurrency
+from typing import Optional, List, Tuple
 
 
 space_re = re.compile(r"\s+")
 dot_re = re.compile(r"\.+")
-puncts = ['.', ',', ':', '!', '?', ';', '/']
+punctuation_characters = ['.', ',', ':', '!', '?', ';', '/']
 specials = ['•', "►"]
 hashtag_re = re.compile(r"(#\w+)")
+splash_url = "http://20.50.240.234:8050/render.html" #'http://192.168.99.100:8050/render.html'
 
 
 class ScrapHelper:
@@ -23,13 +29,13 @@ class ScrapHelper:
     RE_HYPHENS = re.compile(r"[\-‒–—―]")
 
     @staticmethod
-    def get_parsed(url):
+    def get_parsed(url: str):
         response = requests.get(url)
         return bs4.BeautifulSoup(response.content, 'lxml')
 
     @staticmethod
     def get_parsed_js(url):
-        response = requests.post('http://192.168.99.100:8050/render.html', json={
+        response = requests.post(splash_url, json={
             'url': url
         })
         return bs4.BeautifulSoup(response.content, 'lxml')
@@ -66,7 +72,7 @@ class ScrapHelper:
 
 
 class TutByScrapper:
-    categories = {
+    old_page_categories = {
         "concert": "https://afisha.tut.by/concert/",
         "party": "https://afisha.tut.by/party/",
         "theatre": "https://afisha.tut.by/theatre/",
@@ -76,62 +82,76 @@ class TutByScrapper:
         "exhibition": "https://afisha.tut.by/exhibition/"
     }
     listed_events = []
-    mapper = TagMapper()
+
+    def __init__(self, logger):
+        self.logger = logger
+        self.mapper = TagMapper(logger)
+        self.currency_markup = MarkupCurrency()
 
     def list_events(self):
-        print("List tutby")
         self.listed_events = []
-        for category, link in self.categories.items():
-            print(link)
-            for event in self._list_events_from_old_page(link, category):
-                yield event
-        for category, link in self.new_page_categories.items():
-            print(link)
-            for event in self._list_events_from_new_page(link, category):
+        for category, events_page_url in self.old_page_categories.items():
+            for event in self._list_events_from_old_page(events_page_url, category):
                 yield event
 
-    def _list_events_from_new_page(self, page_url, category):
-        for event_element in self._get_event_elements_from_new_page(page_url):
-            event_url = self._parse_media_element(event_element)
-            if event_url in self.listed_events:
-                continue
+        for category, events_page_url in self.new_page_categories.items():
+            for event in self._list_events_from_new_page(events_page_url, category):
+                yield event
 
-            event_title = self._get_new_event_title(event_element)
-            description, occurrences, image_url, tags, raw_dates = self._parse_event_page(event_url)
-            age = self._get_age_restriction(tags)
-            unified_tags = []
-            unified_tags.extend(self.mapper.map_tut(category))
-            for tag in tags:
-                unified_tags.extend(self.mapper.map_tut(tag))
-
-            for place_name, place_and_dates in occurrences.items():
-                place = place_and_dates[0][0]
-                dates = [d[1] for d in place_and_dates]
-                yield Event(event_title, description, place, dates, event_url,
-                            raw_tags=unified_tags, poster=image_url, age_restriction=age, raw_dates=raw_dates)
-            self.listed_events.append(event_url)
-
-    def _list_events_from_old_page(self, page_url, category):
-        for event_element in self._get_event_elements(page_url):
+    def _list_events_from_old_page(self, events_page_url: str, category: str) -> List[Event]:
+        for event_element in self._get_event_elements(events_page_url):
             try:
-                event_title, event_link = self._parse_old_title_element(event_element)
-                if event_link in self.listed_events:
+                title, page_url = self._parse_old_title_element(event_element)
+                if page_url in self.listed_events:
                     continue
 
-                description, occurrences, image_url, tags, raw_dates = self._parse_event_page(event_link)
-                age = self._get_age_restriction(tags)
-                unified_tags = []
-                unified_tags.extend(self.mapper.map_tut(category))
-                for tag in tags:
-                    unified_tags.extend(self.mapper.map_tut(tag))
-                for place_name, places_and_dates in occurrences.items():
-                    place = places_and_dates[0][0]
-                    dates = [d[1] for d in places_and_dates]
-                    yield Event(event_title, description, place, dates, event_link,
-                                poster=image_url, raw_tags=unified_tags, age_restriction=age, raw_dates=raw_dates)
-                self.listed_events.append(event_link)
+                description, places_and_dates, poster_url, tut_by_tags, raw_dates = self._parse_event_page(page_url)
+                age = self._get_age_restriction_from_tags(tut_by_tags)
+                unified_tags = self._get_unified_tags(tut_by_tags, category)
+                raw_costs = self._get_cost_from_description(description)
+                for place, dates in places_and_dates:
+                    yield Event(title, description, place, dates, page_url,
+                                poster=poster_url, raw_tags=unified_tags, age_restriction=age, raw_dates=raw_dates,
+                                raw_costs=raw_costs)
+                self.listed_events.append(page_url)
+            except str as e:
+                self.logger.log_error(e)
+                traceback.print_exc(file=sys.stdout)
+                continue
+
+    def _get_cost_from_description(self, description) -> Optional[List[str]]:
+        money_tags = [description[s:e] for t, s, e in self.currency_markup.markup(description) if t == "MONEY"]
+        if len(money_tags) > 0:
+            return list(set(money_tags))
+        return None
+
+    def _get_unified_tags(self, tut_by_tags, category) -> List[str]:
+        unified_tags = []
+        unified_tags.extend(self.mapper.map_tut(category))
+        for tag in tut_by_tags:
+            unified_tags.extend(self.mapper.map_tut(tag))
+        return unified_tags
+
+    def _list_events_from_new_page(self, events_page_url, category):
+        for event_element in self._get_event_elements_from_new_page(events_page_url):
+            try:
+                page_url = self._parse_media_element(event_element)
+                if page_url in self.listed_events:
+                    continue
+
+                title = self._get_new_event_title(event_element)
+                description, places_and_dates, poster_url, tut_by_tags, raw_dates = self._parse_event_page(page_url)
+                age = self._get_age_restriction_from_tags(tut_by_tags)
+                unified_tags = self._get_unified_tags(tut_by_tags, category)
+                raw_costs = self._get_cost_from_description(description)
+                for place, dates in places_and_dates:
+                    yield Event(title, description, place, dates, page_url,
+                                raw_tags=unified_tags, poster=poster_url, age_restriction=age, raw_dates=raw_dates,
+                                raw_costs=raw_costs)
+                self.listed_events.append(page_url)
             except Exception as e:
-                print(e)
+                self.logger.log_error(e)
+                traceback.print_exc(file=sys.stdout)
                 continue
 
     @staticmethod
@@ -151,8 +171,8 @@ class TutByScrapper:
             yield event_element
 
     @staticmethod
-    def _get_event_elements(page_url):
-        events_page = ScrapHelper.get_parsed(page_url)
+    def _get_event_elements(events_page_url: str):
+        events_page = ScrapHelper.get_parsed(events_page_url)
         events_block = events_page.find('div', {'id': 'schedule-table'})
         for event_element in events_block.find_all('div', {'class': [
             'b-afisha-event js-film-info',
@@ -202,23 +222,24 @@ class TutByScrapper:
         return event_title, event_link
 
     @staticmethod
-    def _parse_event_page(event_link):
-        event_page = ScrapHelper.get_parsed(event_link)
-        description = TutByScrapper._get_event_description(event_page).replace("О событии", "").strip()
+    def _parse_event_page(event_page_url: str):
+        event_page = ScrapHelper.get_parsed(event_page_url)
+        description = TutByScrapper._get_event_description(event_page)
         occurrences = list(TutByScrapper._parse_occurrences(event_page))
         occurrences_by_places = {}
         for place, date in occurrences:
-            if place.place_name not in occurrences_by_places:
-                occurrences_by_places[place.place_name] = []
-            occurrences_by_places[place.place_name].append((place, date))
+            if place.name not in occurrences_by_places:
+                occurrences_by_places[place.name] = (place, [])
+            occurrences_by_places[place.name][1].append(date)
 
-        raw_occurrences = list(TutByScrapper._get_raw_occurrences(event_page))
-        image_url = TutByScrapper._get_image(event_page)
-        tags = TutByScrapper._get_tags(event_page)
-        return description, occurrences_by_places, image_url, tags, raw_occurrences
+        places_and_dates = list(occurrences_by_places.values())
+        raw_dates = list(TutByScrapper._get_raw_dates(event_page))
+        poster_url = TutByScrapper._get_image(event_page)
+        tut_by_tags = TutByScrapper._get_tags(event_page)
+        return description, places_and_dates, poster_url, tut_by_tags, raw_dates
 
     @staticmethod
-    def _get_raw_occurrences(event_page):
+    def _get_raw_dates(event_page):
         schedule_element = event_page.find("div", {"class": "b-event__tickets js-cut_wrapper"})
         if not schedule_element:
             return None
@@ -241,7 +262,7 @@ class TutByScrapper:
                     yield "%s в %s" % (date.replace("\xa0", " "), time)
 
     @staticmethod
-    def _parse_occurrences(event_page):
+    def _parse_occurrences(event_page: bs4.element.PageElement):
         schedule_element = event_page.find("div", {"class": "b-event__tickets js-cut_wrapper"})
         if not schedule_element:
             return None
@@ -252,18 +273,23 @@ class TutByScrapper:
             day_element = occurrence.find("div", {"class": "b-shedule-day_item"})
             place = TutByScrapper._get_place_from_occurrence(occurrence)
             if not times_element:
-                date = TutByScrapper._get_broad_date(day_element)
-                day_range = DateInterpreter.parse_tutby_date_range(date[0])
-                week_schedule = DateInterpreter.parse_tutby_week_time_schedule(date[1])
-                date_range = EventDateRange(*day_range, week_schedule)
+                date_range, time_range = TutByScrapper._get_broad_date(day_element)
+                date_range = DateInterpreter.parse_tutby_date_range(date_range)
+                week_schedule = DateInterpreter.parse_tutby_week_time_schedule(time_range)
+                date_range = EventDateRange(*date_range, week_schedule)
                 yield place, date_range
             else:
                 date, times = TutByScrapper._get_exact_date(day_element, times_element)
+                if not date and not prev_date:
+                    continue
                 if not date:
                     date = prev_date
                 prev_date = date
-                for time in times:
-                    yield place, DateInterpreter.get_date(*date, *time)
+                if not times or len(times) == 0:
+                    yield place, DateInterpreter.get_date(*date)
+                else:
+                    for time in times:
+                        yield place, DateInterpreter.get_datetime(*date, *time)
 
     @staticmethod
     def _get_exact_raw_date(day_element, times_element):
@@ -279,7 +305,7 @@ class TutByScrapper:
         return [date, times]
 
     @staticmethod
-    def _get_exact_date(day_element, times_element):
+    def _get_exact_date(day_element: bs4.element.PageElement, times_element: bs4.element.PageElement):
         day_string = list(day_element.children)[0].strip()
         if day_string:
             date = DateInterpreter.parse_day_month(day_string)
@@ -291,10 +317,10 @@ class TutByScrapper:
             hour, minute = time_element.text.strip().split(':')
             times.append((int(hour), int(minute)))
 
-        return [date, times]
+        return date, times
 
     @staticmethod
-    def _get_broad_date(day_element):
+    def _get_broad_date(day_element: bs4.element.PageElement):
         values = list(day_element.children)[0].split(',')
         if len(values) != 2:
             raise Exception("Date string cannot be read")
@@ -302,7 +328,7 @@ class TutByScrapper:
         return [date_range.strip(), time_range.strip()]
 
     @staticmethod
-    def _get_place_from_occurrence(occurrence_element):
+    def _get_place_from_occurrence(occurrence_element: bs4.element.PageElement):
         place_element = occurrence_element.find("a", {"class": "b-shedule-place"})
         items = list(place_element.children)
         place_name = str(items[0]).strip()
@@ -334,7 +360,7 @@ class TutByScrapper:
             yield date_range, time_range
 
     @staticmethod
-    def _get_event_description(event_page):
+    def _get_event_description(event_page: bs4.element.PageElement):
         description_element = event_page.find('div', {'id': 'event-description'})
         result = []
         for element in description_element.children:
@@ -353,7 +379,7 @@ class TutByScrapper:
             if not text:
                 continue
             result.append(text)
-        return "\n".join(result)
+        return "\n".join(result).replace("О событии", "").strip()
 
     @staticmethod
     def _get_image(event_page):
@@ -361,7 +387,7 @@ class TutByScrapper:
         return img_element.attrs['src']
 
     @staticmethod
-    def _get_age_restriction(tags):
+    def _get_age_restriction_from_tags(tags):
         age = None
         tag_id = -1
         for i, tag in enumerate(tags):
@@ -378,10 +404,12 @@ class CityDogScrapper:
     afisha_page = "https://citydog.by/afisha/"
     vedy_page = "https://citydog.by/vedy/#events"
     listed_events = []
-    mapper = TagMapper()
+
+    def __init__(self, logger):
+        self.logger = logger
+        self.mapper = TagMapper(logger)
 
     def list_events(self):
-        print("List events from citydog.by")
         self.listed_events = []
         for event in self.list_afisha_events():
             yield event
@@ -389,87 +417,96 @@ class CityDogScrapper:
             yield event
 
     def list_vedy_events(self):
-        print(self.vedy_page)
         events_page = ScrapHelper.get_parsed_js(self.vedy_page)
         events_block = events_page.find('div', {'class': 'vedy-contentCol'}).find("div")
         for event_element in events_block.find_all("div", {"class": "vedyMain-item"}):
-            event_type = self._get_vedy_category(event_element)
-            image_url = self._get_image_url(event_element, "vedyMain-itemImg")
-            labels = self._get_vedy_labels(event_element)
-            info_element = event_element.find("div", {"class": "vedyMain-itemInfo"})
-            event_title, event_link = self._get_title(info_element)
-            if event_link in self.listed_events:
-                continue
-            short_description = self._get_short_description(info_element)
-            header_element, description_element = self._get_full_vedy_info_element(event_link)
-            date_string = self._get_vedy_date(header_element)
-            dates = DateInterpreter.parse_citydog_date(date_string)
-            date_string = date_string.replace("   |   ", " в ")
-            places = self._get_places(header_element)
-            if len(places) > 0:
-                place = places[0]
-            else:
-                place = Place("", "", "")
-            event_source, event_cost, register_link = self._get_event_additional_info(header_element)
-            full_description = self._get_full_description(description_element)
-            tags = self._get_vedy_tags(description_element)
-            tags.extend(labels)
-            unified_tags = []
-            unified_tags.extend(self.mapper.map_cd(event_type))
-            for tag in tags:
-                unified_tags.extend(self.mapper.map_cd(tag))
-            yield Event(event_title, full_description, place, dates, event_link,
-                        poster=image_url, raw_tags=unified_tags, short_description=short_description,
-                        raw_cost=event_cost, registration_info=register_link, raw_dates=[date_string])
+            try:
+                category = self._get_vedy_category(event_element)
+                poster_url = self._get_poster_url(event_element, "vedyMain-itemImg")
+                labels = self._get_vedy_labels(event_element)
+                info_element = event_element.find("div", {"class": "vedyMain-itemInfo"})
+                title, page_url = self._get_title(info_element)
+                if page_url in self.listed_events:
+                    continue
+                short_description = self._get_short_description(info_element)
+                header_element, description_element = self._get_full_vedy_info_element(page_url)
+                date_string = self._get_vedy_date(header_element)
+                dates = DateInterpreter.parse_citydog_date(date_string)
+                date_string = date_string.replace("   |   ", " в ")
+                places = self._get_places(header_element)
+                if len(places) > 0:
+                    place = places[0]
+                else:
+                    place = Place(None, None, None)
+                event_source, raw_cost, register_url = self._get_event_additional_info(header_element)
+                if raw_cost:
+                    raw_cost = [raw_cost]
+                description = self._get_full_description(description_element)
+                cd_tags = self._get_vedy_tags(description_element)
+                cd_tags.extend(labels)
+                unified_tags = self._get_unified_tags(cd_tags, category)
+                yield Event(title, description, place, dates, page_url,
+                            poster=poster_url, raw_tags=unified_tags, short_description=short_description,
+                            raw_costs=raw_cost, registration_info=register_url, raw_dates=[date_string])
 
-            self.listed_events.append(event_link)
+                self.listed_events.append(page_url)
+            except Exception as e:
+                self.logger.log_error(e)
+                continue
+
+    def _get_unified_tags(self, cd_tags, category) -> List[str]:
+        unified_tags = []
+        unified_tags.extend(self.mapper.map_cd(category))
+        for tag in cd_tags:
+            unified_tags.extend(self.mapper.map_cd(tag))
+        return unified_tags
 
     def list_afisha_events(self):
-        print(self.afisha_page)
         events_page = ScrapHelper.get_parsed(self.afisha_page)
         events_block = events_page.find('div', {'class': 'afishaMain-items'})
         for event_element in events_block.children:
-            if type(event_element) == bs4.element.NavigableString:
-                continue
+            try:
+                if type(event_element) == bs4.element.NavigableString:
+                    continue
+                category = self._get_category(event_element)
+                poster_url = self._get_poster_url(event_element, "afishaMain-itemImg")
+                info_element = event_element.find("div", {"class": "afishaMain-itemInfo"})
+                title, page_url = self._get_title(info_element)
+                if page_url in self.listed_events:
+                    continue
 
-            event_type = self._get_category(event_element)
-            image_url = self._get_image_url(event_element, "afishaMain-itemImg")
-            info_element = event_element.find("div", {"class": "afishaMain-itemInfo"})
-            event_title, event_link = self._get_title(info_element)
-            if event_link in self.listed_events:
-                continue
-            date_string = self._get_date(info_element, "afishaMain-itemDate")
-            date = DateInterpreter.parse_citydog_date(date_string)
-            if type(date) != list:
-                date = [date]
-            date_string = date_string.replace("   |   ", " в ")
-            short_description = self._get_short_description(info_element)
-            event_page, event_info_element = self._get_full_event_info_element(event_link)
-            places = self._get_places(event_info_element)
-            event_source, event_cost, registration = self._get_event_additional_info(event_info_element)
-            full_description = self._get_full_description(event_page)
-            occurrences = self._get_occurrences(event_page)
-            raw_dates = list(self._get_raw_occurrences(event_page))
-            raw_dates.append(date_string)
-            unified_tags = []
-            unified_tags.extend(self.mapper.map_cd(event_type))
-            if len(occurrences) > 0:
-                for place_names, dates in occurrences.items():
-                    place = dates[0]
-                    dates = dates[1:]
-                    yield Event(event_title, full_description, place, dates, event_link,
-                                raw_tags=unified_tags, short_description=short_description, poster=image_url,
-                                raw_cost=event_cost, registration_info=registration, raw_dates=raw_dates)
-            else:
-                for place in places:
-                    yield Event(event_title, full_description, place, date, event_link,
-                                raw_tags=unified_tags, short_description=short_description, poster=image_url,
-                                raw_cost=event_cost, registration_info=registration, raw_dates=raw_dates)
+                short_description = self._get_short_description(info_element)
+                event_page, event_info_element = self._get_full_event_info_element(page_url)
+                event_source, raw_cost, registration_url = self._get_event_additional_info(event_info_element)
+                if raw_cost:
+                    raw_cost = [raw_cost]
+                description = self._get_full_description(event_page)
+                unified_tags = self._get_unified_tags([], category)
+                places_and_dates = self._get_occurrences(event_page)
+                if len(places_and_dates) > 0:
+                    raw_dates = list(self._get_raw_occurrences(event_page))
+                    for place, dates in places_and_dates:
+                        yield Event(title, description, place, dates, page_url,
+                                    raw_tags=unified_tags, short_description=short_description, poster=poster_url,
+                                    raw_costs=raw_cost, registration_info=registration_url, raw_dates=raw_dates)
+                else:
+                    date_string = self._get_date_string(info_element, "afishaMain-itemDate")
+                    date = DateInterpreter.parse_citydog_date(date_string)
+                    date_string = date_string.replace("   |   ", " в ")
+                    raw_dates = [date_string]
+                    places = self._get_places(event_info_element)
+                    for place in places:
+                        yield Event(title, description, place, date, page_url,
+                                    raw_tags=unified_tags, short_description=short_description, poster=poster_url,
+                                    raw_costs=raw_cost, registration_info=registration_url, raw_dates=raw_dates)
 
-            self.listed_events.append(event_link)
+                self.listed_events.append(page_url)
+            except Exception as e:
+                self.logger.log_error(e)
+                continue
 
     @staticmethod
-    def _get_vedy_date(header_element: bs4.element.PageElement):
+    def _get_vedy_date(header_element: bs4.element.PageElement) -> str:
         event_info_element = header_element.find("div", {"class": "vedyPage-eventInfoWrapper"})
         date_element = event_info_element.find("h3")
         result = []
@@ -481,7 +518,7 @@ class CityDogScrapper:
         return "".join(result)
 
     @staticmethod
-    def _get_vedy_labels(event_element: bs4.element.PageElement):
+    def _get_vedy_labels(event_element: bs4.element.PageElement) -> List[str]:
         labels_element = event_element.find("div", {"class": "labels"})
         if not labels_element:
             return []
@@ -494,7 +531,7 @@ class CityDogScrapper:
         return labels
 
     @staticmethod
-    def _get_vedy_tags(description_element: bs4.element.PageElement):
+    def _get_vedy_tags(description_element: bs4.element.PageElement) -> List[str]:
         result = []
         tags_element = description_element.find("div", {"class": "vedyPage-tags"})
         for tag_element in tags_element.find_all("div", {"class": "vedyPage-tag"}):
@@ -512,7 +549,7 @@ class CityDogScrapper:
         return event_page, event_info_element
 
     @staticmethod
-    def _get_full_vedy_info_element(vedy_page_url: str):
+    def _get_full_vedy_info_element(vedy_page_url: str) -> Tuple[bs4.element.PageElement, bs4.element.PageElement]:
         header_element = None
         description_element = None
         while not description_element and not header_element:
@@ -523,11 +560,11 @@ class CityDogScrapper:
         return header_element, description_element
 
     @staticmethod
-    def _get_short_description(info_element: bs4.element.PageElement):
+    def _get_short_description(info_element: bs4.element.PageElement) -> str:
         return info_element.find("p").text.strip()
 
     @staticmethod
-    def _get_title(info_element: bs4.element.PageElement):
+    def _get_title(info_element: bs4.element.PageElement) -> Tuple[str, str]:
         title_element = info_element.find("h3").find("a")
         title = title_element.text
         event_link = title_element.attrs['href']
@@ -538,22 +575,22 @@ class CityDogScrapper:
         return event_element.attrs['class'][1].strip().lower()
 
     @staticmethod
-    def _get_vedy_category(event_element: bs4.element.PageElement):
+    def _get_vedy_category(event_element: bs4.element.PageElement) -> str:
         return event_element.attrs['class'][2].strip().lower()
 
     @staticmethod
-    def _get_image_url(event_element: bs4.element.PageElement, class_name):
+    def _get_poster_url(event_element: bs4.element.PageElement, class_name) -> str:
         image_element = event_element.find("div", {"class": class_name})
         image_url = image_element.find("img").attrs['src']
         return image_url
 
     @staticmethod
-    def _get_date(info_element: bs4.element.PageElement, class_name: str):
+    def _get_date_string(info_element: bs4.element.PageElement, class_name: str) -> str:
         date_element = info_element.find("div", {"class": class_name})
         return date_element.text.strip()
 
     @staticmethod
-    def _get_event_additional_info(event_info_element: bs4.element.PageElement):
+    def _get_event_additional_info(event_info_element: bs4.element.PageElement) -> Tuple[str, str, str]:
         additional_info_element = event_info_element.find("div", {"class": "additional_info"})
         event_source = None
         event_cost = None
@@ -573,12 +610,12 @@ class CityDogScrapper:
         return event_source, event_cost, register_link
 
     @staticmethod
-    def _get_full_description(event_page: bs4.element.PageElement):
+    def _get_full_description(event_page: bs4.element.PageElement) -> str:
         full_description_element = event_page.find("div", {"class": "afishaPost-Description-text"})
         return full_description_element.text.strip()
 
     @staticmethod
-    def _get_places(event_info_element: bs4.element.PageElement):
+    def _get_places(event_info_element: bs4.element.PageElement) -> List[Place]:
         places = []
         place_elements = event_info_element.find_all("div", {"class": "place"})
         for place_element in place_elements:
@@ -604,16 +641,16 @@ class CityDogScrapper:
                 for place_element in day_element.find_all("div", {"class": "place"}):
                     place = CityDogScrapper._get_place(place_element)
                     if place.name not in occurrences_by_place:
-                        occurrences_by_place[place.name] = [place]
+                        occurrences_by_place[place.name] = (place, [])
                     sessions = CityDogScrapper._get_sessions(place_element)
                     for time in sessions:
                         time = DateInterpreter.parse_hour_minute(time)
-                        date = DateInterpreter.get_date(*day, *time)
+                        date = DateInterpreter.get_datetime(*day, *time)
                         if type(date) == list:
-                            occurrences_by_place[place.name].extend(date)
+                            occurrences_by_place[place.name][1].extend(date)
                         else:
-                            occurrences_by_place[place.name].append(date)
-        return occurrences_by_place
+                            occurrences_by_place[place.name][1].append(date)
+        return list(occurrences_by_place.values())
 
     @staticmethod
     def _get_raw_occurrences(event_page: bs4.BeautifulSoup):
@@ -679,45 +716,56 @@ class RelaxScrapper:
             (2283, "форум")]])
 
     listed_events = []
-    mapper = TagMapper()
+
+    def __init__(self, logger):
+        self.logger = logger
+        self.mapper = TagMapper(logger)
 
     def list_events(self):
-        print("List events from Relax")
         self.listed_events = []
-        for event_types, url in self.pages:
-            print(url)
+        for event_categories, url in self.pages:
             schedule_element = None
             while not schedule_element:
                 events_page = self._open_events_page(url)
                 schedule_element = events_page.find("div", {"id": "append-shcedule"})
-            for event in self._list_events(schedule_element, event_types):
+            for event in self._list_events(schedule_element, event_categories):
                 yield event
 
-    def _list_events(self, schedule_element, event_types):
+    @staticmethod
+    def _get_poster_url(event_page: bs4.element.PageElement) -> Optional[str]:
+        poster_element = event_page.find("img", {"class": "b-afisha-event__image"})
+        if poster_element:
+            return poster_element.attrs['src']
+        return None
+
+    def _get_relax_tags(self, genre, title, event_categories) -> List[str]:
+        tags = []
+        if genre:
+            tags.extend(genre)
+        tags.extend(self._get_tags_from_title(title))
+        tags.extend(event_categories[1:])
+        return tags
+
+    def _list_events(self, schedule_element: Optional[bs4.element.PageElement], event_categories: List[str]):
         day_schedules = schedule_element.find_all("div", {"class": "schedule__list"})
         for day_schedule_element in day_schedules:
             event_elements = self._get_events(day_schedule_element)
             for event_element in event_elements:
-                event_title, event_link = self._get_title_and_link(event_element)
-                if event_link in self.listed_events:
+                title, page_url = self._get_title_and_link(event_element)
+                if page_url in self.listed_events:
                     continue
-                event_page = ScrapHelper.get_parsed(event_link)
-                image_url = event_page.find("img", {"class": "b-afisha-event__image"}).attrs['src']
+                event_page = ScrapHelper.get_parsed(page_url)
+                poster_url = self._get_poster_url(event_page)
                 event_full_info = event_page.find("div", {"class": "b-afisha-layout-theater_full"})
-                event_cost, event_genre, event_info_number, working_hours, registration_info, age_restriction \
-                    = self._get_metadata(event_full_info)
-                occurrences = self._get_occurrences(event_full_info)
+                raw_cost, genre, working_hours, registration_info, age_restriction = self._get_metadata(event_full_info)
+                if raw_cost:
+                    raw_cost = [raw_cost]
+                places_and_dates = self._get_occurrences(event_full_info)
                 raw_dates = list(self._get_raw_occurrences(event_full_info))
                 description = self._get_description(event_full_info)
-                tags = []
-                if event_genre:
-                    tags.extend(event_genre)
-                tags.extend(self._get_tags_from_title(event_title))
-                tags.extend(event_types[1:])
-
-                for place_name, dates in occurrences.items():
-                    place = dates[0]
-                    dates = dates[1:]
+                relax_tags = self._get_relax_tags(genre, title, event_categories)
+                unified_tags = self._get_unified_tags(relax_tags, event_categories)
+                for place, dates in places_and_dates:
                     if working_hours:
                         raw_dates.append(working_hours)
                         schedule = DateInterpreter.parse_relax_schedule(working_hours)
@@ -728,16 +776,11 @@ class RelaxScrapper:
                         elif type(dates[0]) == EventDateRange and len(dates) == 1:
                             dates[0].week_schedule = schedule
 
-                    unified_tags = []
-                    unified_tags.extend(self.mapper.map_relax(event_types[0]))
-                    for tag in tags:
-                        unified_tags.extend(self.mapper.map_relax(tag))
-
-                    yield Event(event_title, description, place, dates, event_link,
-                                raw_cost=event_cost, poster=image_url, registration_info=registration_info,
+                    yield Event(title, description, place, dates, page_url,
+                                raw_costs=raw_cost, poster=poster_url, registration_info=registration_info,
                                 raw_tags=unified_tags, age_restriction=age_restriction, raw_dates=raw_dates)
 
-                self.listed_events.append(event_link)
+                self.listed_events.append(page_url)
 
     @staticmethod
     def _open_events_page(url):
@@ -753,6 +796,14 @@ class RelaxScrapper:
         if "мастер класс" in title:
             return ["мастер-класс"]
         return []
+
+    def _get_unified_tags(self, relax_tags, event_categories) -> List[str]:
+        unified_tags = []
+        unified_tags.extend(self.mapper.map_relax(event_categories[0]))
+        for tag in relax_tags:
+            unified_tags.extend(self.mapper.map_relax(tag))
+
+        return unified_tags
 
     @staticmethod
     def _get_raw_occurrences(event_full_info: bs4.element.PageElement):
@@ -776,7 +827,7 @@ class RelaxScrapper:
         times_element = event_full_info.find("div", {"class": "schedule"})
         place = RelaxScrapper._get_place(event_full_info)
         if place:
-            occurrences_by_place[place.name] = [place]
+            occurrences_by_place[place.name] = (place, [])
         if not times_element:
             times_element = event_full_info.find("div", {"id": "theatre-table"})
         prev_date = None
@@ -791,7 +842,7 @@ class RelaxScrapper:
             if place_name:
                 schedule_place = Place(place_name, None, None)
                 if schedule_place.name not in occurrences_by_place:
-                    occurrences_by_place[schedule_place.name] = [schedule_place]
+                    occurrences_by_place[schedule_place.name] = (schedule_place, [])
             else:
                 schedule_place = place
 
@@ -809,18 +860,18 @@ class RelaxScrapper:
                 if type(date) == EventDateRange:
                     date.week_schedule = [time] * 7
                 else:
-                    date = DateInterpreter.get_date(*date, *time)
+                    date = DateInterpreter.get_datetime(*date, *time)
             else:
                 if type(date) != EventDateRange:
-                    date = DateInterpreter.get_day(*date)
+                    date = DateInterpreter.get_date(*date)
             if type(date) == list:
-                occurrences_by_place[schedule_place.name].extend(date)
+                occurrences_by_place[schedule_place.name][1].extend(date)
             else:
-                occurrences_by_place[schedule_place.name].append(date)
-        return occurrences_by_place
+                occurrences_by_place[schedule_place.name][1].append(date)
+        return list(occurrences_by_place.values())
 
     @staticmethod
-    def _get_title_and_link(event_element: bs4.element.PageElement):
+    def _get_title_and_link(event_element: bs4.element.PageElement) -> Tuple[str, str]:
         title_element = event_element.find("div", {"class": "schedule__event"}).find("a")
         event_title = ScrapHelper.get_string(title_element)
         event_link = title_element.attrs['href']
@@ -876,11 +927,10 @@ class RelaxScrapper:
             result.append(str(t))
         return "\n".join(result)
 
-    @staticmethod
-    def _get_metadata(event_info_element: bs4.element.PageElement):
+    def _get_metadata(self, event_info_element: bs4.element.PageElement) -> \
+            Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
         event_cost = None
         event_genre = None
-        event_info_number = None
         working_hours = None
         registration_info = None
         age_restriction = None
@@ -896,7 +946,7 @@ class RelaxScrapper:
                 elif 'жанр' in key.lower():
                     event_genre = [v.strip().lower() for v in value.split(',')]
                 elif 'инфолиния' in key.lower():
-                    event_info_number = value
+                    pass
                 elif 'возрастное' in key.lower():
                     age_restriction = value.strip()
                 elif 'дата' == key.lower():
@@ -910,8 +960,8 @@ class RelaxScrapper:
                 elif 'внимание' in key.lower():
                     continue
                 else:
-                    raise Exception("Metadata is unknown: %s" % key)
-        return event_cost, event_genre, event_info_number, working_hours, registration_info, age_restriction
+                    self.logger.log_error("Relax metadata is unknown: %s" % key)
+        return event_cost, event_genre, working_hours, registration_info, age_restriction
 
 
 def detect_lang(text):
@@ -931,19 +981,30 @@ def clean_text(text):
         text = text.replace(c, ' ')
 
     lines = text.split('\n')
-    lines = [l.strip() for l in lines if len(l.strip()) > 0]
+    lines = [line.strip() for line in lines if len(line.strip()) > 0]
     normal_lines = []
-    for l in lines:
-        words = [w for w in l.split(' ') if len(w) > 0]
-        if l[-1] in puncts:
-            normal_lines.append(l + ' ')
+    for line in lines:
+        words = [w for w in line.split(' ') if len(w) > 0]
+        if line[-1] in punctuation_characters:
+            normal_lines.append(line + ' ')
         elif "http" in words[-1]:
-            normal_lines.append(l + ' . ')
+            normal_lines.append(line + ' . ')
         else:
-            normal_lines.append(l + '. ')
+            normal_lines.append(line + '. ')
     text = "".join(normal_lines)
     text = space_re.sub(" ", text)
     return text.strip()
+
+
+class UnstructuredEvent:
+    def __init__(self, text: str, url: str, timestamp: datetime,
+                 title: str = None, poster_bytes: list = None, poster: str = None):
+        self.title = title
+        self.text = text
+        self.url = url
+        self.poster_bytes = poster_bytes
+        self.timestamp = timestamp
+        self.poster = poster
 
 
 class TelegramEventFetcher:
@@ -965,11 +1026,7 @@ class TelegramEventFetcher:
                     if not raw_text:
                         continue
 
-                    if detect_lang(raw_text) == "by":
-                        continue
-
                     title = None
-
                     for value, inner_value in self.bold_re.findall(m.text):
                         title = inner_value.replace('\n', ' ').strip()
                         break
@@ -980,7 +1037,7 @@ class TelegramEventFetcher:
                     if 'MessageMediaPhoto' in str(type(m.media)):
                         image_bytes = await client.download_media(m, file=bytes, thumb=-1)
 
-                    yield {"title": title, "text": text, "url": url, "timestamp": m.date, "poster_bytes": image_bytes}
+                    yield UnstructuredEvent(text, url, m.date, title=title, poster_bytes=image_bytes)
 
 
 class VkEventFetcher:
@@ -991,7 +1048,7 @@ class VkEventFetcher:
 
     stop_words = ["победитель", "выиграй", "выигрывай", "выигрывай"]
 
-    def fetch_events(self):
+    def fetch_events(self) -> List[UnstructuredEvent]:
         vk_session = vk_api.VkApi(self.phone_num, self.password)
         vk_session.auth()
         api = vk_session.get_api()
@@ -1011,20 +1068,70 @@ class VkEventFetcher:
                             poster = image['url']
 
                     url = "https://vk.com/wall-%s_%s" % (group_id, post_id)
-                    timestamp = datetime.datetime.fromtimestamp(post['date'])
+                    timestamp = datetime.fromtimestamp(post['date'])
                     if not text or len(text.split(' ')) < 8:
                         continue
                     if any(s in text.lower() for s in self.stop_words):
                         continue
 
-                    if detect_lang(text) == "by":
-                        continue
                     text = self.clean_text(text)
-
-                    yield {"text": self.clean_text(text), "url": url, "timestamp": timestamp, 'poster': poster}
+                    yield UnstructuredEvent(text, url, timestamp, poster=poster)
 
     def clean_text(self, text):
         for match in self.club_re.finditer(text):
             value, group_name = match.groups()
             text = text.replace(value, group_name)
         return clean_text(text)
+
+
+def post_process_event(event: Event, logger, currency_markup, timestamp: datetime) -> Event:
+    if event.raw_costs and len(event.raw_costs) > 0 and not event.cost:
+        costs = []
+        for raw_cost in event.raw_costs:
+            markup = currency_markup.markup(raw_cost)
+            if len(markup) == 0:
+                logger.log_error("Cost couldn't be parsed: %s" % raw_cost)
+                continue
+
+            money_tags = [m for m in markup if m[0] == "MONEY"]
+            if len(money_tags) > 0:
+                currencies = [currency_markup.parse_currency(raw_cost[s:e]) for _, s, e in money_tags]
+                currencies = [c for c in currencies if c]
+                if len(currencies) != 0:
+                    costs.extend(sorted(list(set([c for sublist in currencies for c in sublist]))))
+                else:
+                    logger.log_error("Cost couldn't be parsed: %s" % raw_cost)
+
+            if any(m[0] == "FREE" for m in markup) and "free" not in event.event_tags:
+                event.event_tags.append("free")
+        event.cost = costs
+
+    if event.raw_tags and len(event.raw_tags) > 0:
+        for raw_tag in event.raw_tags:
+            if raw_tag in event_type_mapping:
+                event.event_tags.append(event_type_mapping[raw_tag])
+
+    event.timestamp = timestamp
+    return event
+
+
+def parse_event(unstructured_event: UnstructuredEvent, classifier, extractor, uploader) -> Optional[Event]:
+    event_types = classifier.predict_type(unstructured_event.text)
+    if len(event_types) == 0:
+        return None
+
+    event = extractor.extract_entities_from_event(unstructured_event.text, unstructured_event.timestamp)
+    if not event or not event.event_dates or len(event.event_dates) == 0:
+        return None
+
+    event.source = unstructured_event.url
+    event.timestamp = unstructured_event.timestamp
+    if unstructured_event.title:
+        event.title = unstructured_event.title
+    if unstructured_event.poster:
+        event.poster = unstructured_event.poster
+    if unstructured_event.poster_bytes and len(unstructured_event.poster_bytes) > 0:
+        upload_result = uploader.upload_image(unstructured_event.poster_bytes)
+        event.poster = upload_result.url
+    event.event_tags = event_types
+    return event

@@ -5,11 +5,11 @@ import asyncio
 import cloudinary
 
 from markup import NamedEntityExtractor
-from scrappers import VkEventFetcher, TelegramEventFetcher
+from scrappers import VkEventFetcher, TelegramEventFetcher, UnstructuredEvent, parse_event
 from classifier import TypeClassifier
-from models import EventDateRange
 from cloudinary import uploader
 from configuration import classifier_model, cloudinary_config
+from typing import List
 
 
 cloudinary.config(
@@ -19,45 +19,10 @@ cloudinary.config(
 )
 
 
-def parse_events(events, classifier, extractor):
-    for event_json in events:
+def parse_events(events: List[UnstructuredEvent], classifier, extractor):
+    for unstructured_event in events:
         try:
-            event_types = classifier.predict_type(event_json["text"])
-            if len(event_types) == 0:
-                continue
-
-            event = extractor.extract_entities_from_event(event_json['text'])
-            if not event or not event.event_dates:
-                continue
-
-            dates = []
-            for d in event.event_dates:
-                if type(d) == EventDateRange:
-                    if (d.start_day and d.start_day.year < 2019) or (d.end_day and d.end_day.year < 2019):
-                        continue
-                else:
-                    if d.year < 2019:
-                        continue
-                dates.append(d)
-
-            if len(dates) == 0:
-                continue
-
-            if "url" in event_json and event_json['url']:
-                event.source = event_json['url']
-            if "timestamp" in event_json and event_json['timestamp']:
-                event.timestamp = event_json['timestamp']
-            if "title" in event_json and event_json['title']:
-                event.title = event_json['title']
-            if 'poster' in event_json and event_json['poster']:
-                event.poster = event_json['poster']
-            if 'poster_bytes' in event_json and event_json['poster_bytes']:
-                upload_result = uploader.upload_image(event_json['poster_bytes'])
-                event.poster = upload_result.url
-
-            event.event_dates = dates
-            event.event_tags = event_types
-
+            event = parse_event(unstructured_event, classifier, extractor, uploader)
             yield event
         except Exception as e:
             print(e)

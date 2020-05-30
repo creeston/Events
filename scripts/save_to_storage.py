@@ -43,4 +43,4 @@ def save_to_storage(folder):
 
 
 if __name__ == "__main__":
-    save_to_storage("C:\\Projects\\Research\\Events\\data\\event_data\\raw_data\\2020_5_22")
+    save_to_storage("C:\\Projects\\Research\\Events\\data\\event_data\\raw_data\\2020_5_29")

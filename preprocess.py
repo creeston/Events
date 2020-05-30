@@ -50,5 +50,5 @@ class TextPreprocessor:
 
     def remove_special_characters(self, text):
         for char in self.special_chars:
-            text = text.replace(str(char), "")
+            text = text.replace(str(char), " ")
         return text

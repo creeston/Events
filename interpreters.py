@@ -3,12 +3,12 @@ import json
 import regex
 
 from models import *
+from datetime import timedelta
+from typing import Tuple
 
 hyphens = r"[\-‒–—―—]"
 hyphens_regex = re.compile(r"[\-‒–—―]")
-
 relax_day_month_regex = re.compile(r"(\d+)\s*(\w+)", re.U)
-
 month_mapping = {
     "января": 1,
     "февраля": 2,
@@ -23,7 +23,6 @@ month_mapping = {
     "ноября": 11,
     "декабря": 12
 }
-
 weekday_mapping = {
     'пн': 0,
     'вт': 1,
@@ -234,7 +233,7 @@ def get_time_range(groups):
 
 
 # вторник в 18:30
-week_day_time_re = regex.compile("(\p{L}+)\s+" + time_regex)
+week_day_time_re = regex.compile(r"(\p{L}+)\s+" + time_regex)
 
 
 def get_week_day_time(groups):
@@ -353,14 +352,14 @@ day_month_relax_regex = re.compile(r"(\d{1,2})(\s+(%s))?" % "|".join([v.lower() 
 time_range_regex = re.compile(r"((\d{2}):(\d{2})\s*" + hyphens + r"\s*(\d{2}):(\d{2}))|(выходн)")
 
 
-current_year = datetime.datetime.now().year
-today = datetime.datetime.now()
-tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
+current_year = datetime.now().year
+today = datetime.now()
+tomorrow = datetime.now() + timedelta(days=1)
 
 
 class DateInterpreter:
     @staticmethod
-    def parse_day_month(date_string):
+    def parse_day_month(date_string: str) -> Tuple[int, Optional[int]]:
         date_string = date_string.replace(u"\xa0", " ").strip()
         values = date_string.split(" ")
         if len(values) > 2:
@@ -484,8 +483,8 @@ class DateInterpreter:
                 if not start_month:
                     start_month = end_month
                 dates.append(EventDateRange(
-                    DateInterpreter.get_day(int(start_day), start_month),
-                    DateInterpreter.get_day(int(end_day), end_month), [time_ranges[time_range_id][0]] * 7))
+                    DateInterpreter.get_date(int(start_day), start_month),
+                    DateInterpreter.get_date(int(end_day), end_month), [time_ranges[time_range_id][0]] * 7))
                 i += 2
                 time_range_id += 1
             elif separation == ",":
@@ -503,8 +502,8 @@ class DateInterpreter:
                     start_time, end_time = time_ranges[time_range_id][0]
                     for day, m in current_enumeration:
                         dates.append(EventDateRange(
-                            DateInterpreter.get_date(day, month, *start_time),
-                            DateInterpreter.get_date(day, month, *end_time)
+                            DateInterpreter.get_datetime(day, month, *start_time),
+                            DateInterpreter.get_datetime(day, month, *end_time)
                         ))
                     current_enumeration = None
                 else:
@@ -513,15 +512,15 @@ class DateInterpreter:
                         print("")
                     start_time, end_time = time_ranges[time_range_id][0]
                     dates.append(EventDateRange(
-                        DateInterpreter.get_date(day, month, *start_time),
-                        DateInterpreter.get_date(day, month, *end_time)
+                        DateInterpreter.get_datetime(day, month, *start_time),
+                        DateInterpreter.get_datetime(day, month, *end_time)
                     ))
                 time_range_id += 1
                 i += 1
         return dates
 
     @staticmethod
-    def parse_citydog_date(date_string):
+    def parse_citydog_date(date_string) -> list:
         # 3 мая\nДедлайн: 01.07
         date_string = date_string.split('\n')[0]
 
@@ -533,7 +532,7 @@ class DateInterpreter:
             month = month_mapping[month]
             hour = int(hour)
             minute = int(minute)
-            return [DateInterpreter.get_date(day, month, hour, minute)]
+            return [DateInterpreter.get_datetime(day, month, hour, minute)]
 
         # с 12 марта
         match = date_range_without_end_citydog_regex.match(date_string)
@@ -541,7 +540,7 @@ class DateInterpreter:
             day, month = match.groups()
             day = int(day)
             month = month_mapping[month]
-            return [EventDateRange(datetime.date(current_year, month, day), None, None)]
+            return [EventDateRange(datetime(current_year, month, day), None, None)]
 
         # 12 февраля - 30 апреля
         match = date_range_citydog_regex.match(date_string)
@@ -556,7 +555,7 @@ class DateInterpreter:
             day, month = DateInterpreter.parse_day_month(value)
             if not month:
                 month = dates[-1].month
-            dates.append(datetime.date(current_year, month, int(day)))
+            dates.append(datetime(year=current_year, month=month, day=int(day)))
 
         return dates
 
@@ -569,12 +568,12 @@ class DateInterpreter:
             end_year = current_year
         if not start_month:
             start_month = end_month
-        start_date = datetime.date(int(start_year), month_mapping[start_month], int(start_day))
-        end_date = datetime.date(int(end_year), month_mapping[end_month], int(end_day))
+        start_date = datetime(int(start_year), month_mapping[start_month], int(start_day))
+        end_date = datetime(int(end_year), month_mapping[end_month], int(end_day))
         return EventDateRange(start_date, end_date, None)
 
     @staticmethod
-    def parse_tutby_date_range(date_range):
+    def parse_tutby_date_range(date_range: str) -> Tuple[Optional[datetime], Optional[datetime]]:
         date_range = date_range.lower()
         if 'постоянная' in date_range:
             return None, None
@@ -582,11 +581,14 @@ class DateInterpreter:
         if not match:
             raise Exception("unknown date range format")
         start_day, start_month, end_day, end_month = match.groups()
-        return datetime.date(current_year, month_mapping[start_month.strip()], int(start_day.strip())), \
-            datetime.date(current_year, month_mapping[end_month.strip()], int(end_day.strip()))
+        start_month = month_mapping[start_month.strip()]
+        start_day = int(start_day.strip())
+        end_month = month_mapping[end_month.strip()]
+        end_day = int(end_day.strip())
+        return datetime(current_year, start_month, start_day), datetime(current_year, end_month, end_day)
 
     @staticmethod
-    def parse_tutby_week_time_schedule(week_string):
+    def parse_tutby_week_time_schedule(week_string: str):
         week_string = week_string.lower()
         week_schedule = [None] * len(weekday_mapping)
         for match in tut_by_week_range.findall(week_string):
@@ -600,23 +602,26 @@ class DateInterpreter:
         return week_schedule
 
     @staticmethod
-    def get_date(day, month, hour, minute):
+    def get_datetime(day, month, hour, minute, year=None):
         if type(month) == str:
             month = month_mapping[month]
-        return datetime.datetime(current_year, month, int(day), int(hour), int(minute))
+        if not year:
+            year = current_year
+        return datetime(year, month, int(day), int(hour), int(minute))
 
     @staticmethod
-    def get_day(day, month):
+    def get_date(day: int, month) -> datetime:
         if type(month) == str:
             month = month_mapping[month]
-        return datetime.date(current_year, month, day)
+        return datetime(current_year, month, day)
 
 
 class TagMapper:
     mapping_file = "C:\\Projects\\Research\\Events\\data\\tags\\mapping.json"
 
-    def __init__(self):
+    def __init__(self, logger):
         self.mapping = self._load_mapping(self.mapping_file)
+        self.logger = logger
 
     @staticmethod
     def _load_mapping(filename):
@@ -632,13 +637,12 @@ class TagMapper:
     def map_cd(self, value):
         return self._get_mapped(value, self.mapping["cd"])
 
-    @staticmethod
-    def _get_mapped(value, mapping):
+    def _get_mapped(self, value, mapping):
         if value in mapping["tag"]:
             mapped = mapping["tag"][value]
         elif value in mapping["type"]:
             mapped = mapping["type"][value]
         else:
-            print("Unknown tag: %s" % value)
+            self.logger.log_info("Unknown tag: %s" % value)
             return [value.title()]
         return mapped.split(',')

@@ -2,7 +2,7 @@ import json
 import datetime
 from typing import List
 
-from azure.storage.table import TableService
+from functions.storage.table import TableService
 from models import group_by_dates
 
 
