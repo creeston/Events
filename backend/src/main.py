@@ -8,7 +8,7 @@ from flask import Flask, jsonify, request, _request_ctx_stack
 from sql_storage import EventRepository
 from datetime import datetime
 from flask_cors import CORS
-from .auth import requires_auth, AuthError
+from auth import requires_auth, AuthError
 
 app = Flask(__name__)
 CORS(app)
