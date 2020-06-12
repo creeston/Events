@@ -2,8 +2,8 @@ import json
 import datetime
 from typing import List
 
-from functions.storage.table import TableService
-from models import group_by_dates
+from azure.cosmosdb.table import TableBatch, TableService
+from models import group_by_dates, Event
 
 
 class EventRepository:
@@ -13,7 +13,7 @@ class EventRepository:
     def __init__(self, connection_string=None):
         if not connection_string:
             connection_string = "AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;DefaultEndpointsProtocol=http;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"
-            self.table_client = TableService(connection_string=connection_string)
+        self.table_client = TableService(connection_string=connection_string, is_emulated=True)
 
     def list_events_by_date(self, dt: datetime.date) -> List[dict]:
         pk = self._date_to_pk(dt)
@@ -71,6 +71,18 @@ class EventRepository:
         grouped_events = group_by_dates(events)
         for dt, events in grouped_events.items():
             self.save_events_by_date(events, dt)
+
+    def save_verified_events(self, events: List[Event]):
+        pk = datetime.datetime.now().timestamp() % 255
+        for event in events:
+            event_description = event.to_str()
+            event_hash = hash(event_description)
+            self.table_client.insert_or_replace_entity("verifiedEvents",{
+                "PartitionKey": str(pk),
+                "RowKey": str(event_hash),
+                "Text": event_description,
+                "Labels": ",".join(event.event_tags)
+            })
 
     @staticmethod
     def _date_to_pk(dt: datetime.date):

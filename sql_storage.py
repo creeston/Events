@@ -1,7 +1,7 @@
 import datetime
 import pyodbc
 
-from typing import List
+from typing import List, Tuple
 from configuration import sql_server
 from models import Event, EventDateRange, Place
 
@@ -10,6 +10,7 @@ class EventRepository:
     events_by_date_table = "eventsByDate"
     event_duplicates_table = "eventDuplicates"
 
+    sql_get_event = "EXECUTE [dbo].[GetEvent] ?"
     sql_insert_event = "EXECUTE [CreateEvent] ?, ?, ?, ?, ?, ?, ?"
     sql_insert_modified_event = "EXECUTE [InsertModifiedEvent] ?, ?, ?, ?, ?, ?, ?, ?, ?"
     sql_set_date = 'EXECUTE [dbo].SetEventDate ?, ?'
@@ -17,6 +18,7 @@ class EventRepository:
     sql_set_type = "EXECUTE [dbo].SetEventType ?, ?"
     sql_list_event_types = "EXECUTE [dbo].ListEventTypes"
     sql_list_event_by_date = "EXECUTE [dbo].ListEventsByDate ?"
+    sql_list_event_modified_by_users = "EXECUTE [dbo].[ListEventsModifiedByUser]"
     sql_list_event_by_date_for_user = "EXECUTE [dbo].ListEventsByDateForUser ?, ?"
     sql_delete_event = "[dbo].[DeleteEvent] ?"
     sql_create_place = "[dbo].[CreatePlace] ?, ?, ?"
@@ -144,6 +146,33 @@ class EventRepository:
         query_result = self.cursor.fetchall()
         return self._get_events_from_query_result(query_result)
 
+    def get_event(self, event_id) -> Event:
+        self.cursor.execute(self.sql_get_event, event_id)
+        query_result = self.cursor.fetchall()
+        return self._get_events_from_query_result(query_result)[0]
+
+    def list_events_modified_by_users(self) -> List[Tuple[Event, int]]:
+        self.cursor.execute(self.sql_list_event_modified_by_users)
+        query_result = self.cursor.fetchall()
+        events = []
+        for event_id, title, poster, short, desc, cost, place_name, \
+                place_address, place_url, types, source_event_id, user_id in query_result:
+
+            if types:
+                types = [t for t in types.split(' ')]
+            else:
+                types = []
+
+            if cost:
+                cost = [int(c) for c in cost.split(' ')]
+
+            place = Place(place_name, place_address, place_url)
+            event = Event(title, desc, place, [], "",
+                          short_description=short, poster=poster, event_tags=types, cost=cost,
+                          event_id=event_id, source_event_id=source_event_id)
+            events.append((event, user_id))
+        return events
+
     @staticmethod
     def _get_events_from_query_result(query_result):
         events = []
@@ -205,3 +234,43 @@ class EventRepository:
                 self.cursor.execute(self.sql_set_date_range, (date.start, date.end, event_id))
             else:
                 self.cursor.execute(self.sql_set_date, (date, event_id))
+
+
+class User:
+    def __init__(self, user_id, user_name, is_trust_worth):
+        self.user_id = user_id
+        self.user_name = user_name
+        self.is_trust_worth = is_trust_worth
+
+
+class UserRepository:
+    sql_list_user = "EXECUTE [dbo].[ListUsers]"
+    sql_update_user = "EXECUTE [dbo].[UpdateUser] ?, ?"
+
+    def __init__(self):
+        self.connection = pyodbc.connect(
+            'DRIVER={ODBC Driver 17 for SQL Server};SERVER=' + sql_server['server']
+            + ';DATABASE=' + sql_server['database']
+            + ';UID=' + sql_server['username']
+            + ';PWD=' + sql_server['password'])
+
+        self.cursor = self.connection.cursor()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type_param, value, traceback):
+        self.cursor.close()
+        self.connection.close()
+
+    def list_users(self) -> List[User]:
+        self.cursor.execute(self.sql_list_user)
+        query_result = self.cursor.fetchall()
+        users = []
+        for user_id, username, is_trust_worth in query_result:
+            users.append(User(user_id, username, is_trust_worth))
+        return users
+
+    def update_user(self, user: User):
+        self.cursor.execute(self.sql_update_user, user.user_id, user.is_trust_worth)
+        self.connection.commit()
