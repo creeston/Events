@@ -31,7 +31,9 @@ labels = [
 
 
 class ClassifierTrainer:
-    preprocessor = TextPreprocessor()
+    def __init__(self, logger):
+        self.logger = logger
+        self.preprocessor = TextPreprocessor()
 
     def train_classifier_model(self, raw_data, pretrained_model, output_path):
         df_train, df_val, df_test = self._prepare_train_data(raw_data)
@@ -45,10 +47,15 @@ class ClassifierTrainer:
             text_cols=0,
             label_delim=' ')
 
+        self.logger.log_info("Start training language model")
         language_model_learner = self._create_language_model_learner(data_lm, pretrained_model)
         encoder_name = self._train_language_model(language_model_learner)
+
+        self.logger.log_info("Start classifier")
         classifier_learner = self._create_classifier_learner(data_lm, df_train, df_val, tokenizer, encoder_name)
         self._train_classifier(classifier_learner)
+
+        self.logger.log_info("Export model")
         classifier_learner.export(output_path)
         learner_new = ftext.load_learner(output_path)
         label_precision = self._evaluate_model(df_test, learner_new)
@@ -80,10 +87,11 @@ class ClassifierTrainer:
         return learn_lm
 
     def _train_language_model(self, learn_lm):
-        learn_lm.freeze()
-        learn_lm.fit_one_cycle(3, 1e-2, moms=(0.8, 0.7))
+        # comment to speed up testing
+        # learn_lm.freeze()
+        # learn_lm.fit_one_cycle(3, 1e-2, moms=(0.8, 0.7))
 
-        learn_lm.unfreeze()
+        # learn_lm.unfreeze()
         learn_lm.fit_one_cycle(5, 1e-3, moms=(0.8, 0.7))
 
         encoder_name = 'ft_enc_events'
@@ -101,19 +109,20 @@ class ClassifierTrainer:
         return learn
 
     def _train_classifier(self, learner):
-        learner.freeze()
+        # comment to speed up
+        # learner.freeze()
 
         # Train with best learning rate
 
-        learner.fit_one_cycle(2, 6e-01, moms=(0.8, 0.7))
+        # learner.fit_one_cycle(2, 6e-01, moms=(0.8, 0.7))
 
         # Unfreeze some layers and train with lower learning rates
 
-        learner.freeze_to(-2)
-        learner.fit_one_cycle(3, slice(1e-2 / (2.6 ** 4), 1e-2), moms=(0.8, 0.7))
+        # learner.freeze_to(-2)
+        # learner.fit_one_cycle(3, slice(1e-2 / (2.6 ** 4), 1e-2), moms=(0.8, 0.7))
 
-        learner.freeze_to(-3)
-        learner.fit_one_cycle(2, slice(5e-3 / (2.6 ** 4), 5e-3), moms=(0.8, 0.7))
+        # learner.freeze_to(-3)
+        # learner.fit_one_cycle(2, slice(5e-3 / (2.6 ** 4), 5e-3), moms=(0.8, 0.7))
 
         learner.unfreeze()
         learner.fit_one_cycle(2, slice(1e-3 / (2.6 ** 4), 1e-3), moms=(0.8, 0.7))
