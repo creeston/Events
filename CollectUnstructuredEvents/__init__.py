@@ -92,8 +92,7 @@ async def get_unstructured_events():
     logging.info("Finish parsing VK events")
 
 
-def main(mytimer: func.TimerRequest) -> None:
-    return None
+def main(msg) -> None:
     asyncio.run(get_unstructured_events())
 
 

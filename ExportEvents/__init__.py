@@ -58,4 +58,3 @@ def main(msg: func.QueueMessage) -> None:
 
 if __name__ == "__main__":
     main(func.QueueMessage(body="2020_5_29/events.json"))
-

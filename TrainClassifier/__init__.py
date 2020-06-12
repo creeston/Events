@@ -4,7 +4,7 @@ import os
 from azure.storage.blob import ContainerClient
 from azure.cosmosdb.table.tableservice import TableService
 from trainers import labels, ClassifierTrainer
-from functions.common import Logger
+from common import Logger
 
 connection_string = os.environ['AzureWebJobsStorage']
 service = TableService(connection_string=connection_string, is_emulated=True)
@@ -53,7 +53,7 @@ def download_model() -> str:
     return model_dir
 
 
-def main(mytimer: func.TimerRequest) -> None:
+def main(msg) -> None:
     trainer = ClassifierTrainer(Logger())
     logging.info("Start loading data for training")
     data = load_data()
@@ -63,4 +63,6 @@ def main(mytimer: func.TimerRequest) -> None:
     itos_pretrained = os.path.abspath(model_path + '\\itos')
     pretrained_data = (weights_pretrained, itos_pretrained)
     logging.info("Start training")
-    trainer.train_classifier_model(data, pretrained_data, "C:\\Projects\\model")
+    train_model = os.path.abspath("trained_model")
+    result = trainer.train_classifier_model(data, pretrained_data, train_model)
+    logging.info("Training finished " + str(result))

@@ -70,7 +70,7 @@ def remove_duplicates():
     return events_blob
 
 
-def main(mytimer: func.TimerRequest, msg: func.Out[str]) -> None:
+def main(msg, out_msg: func.Out[str]) -> None:
     events_blob = remove_duplicates()
     if not events_blob:
         return

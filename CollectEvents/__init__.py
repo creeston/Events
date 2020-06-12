@@ -8,7 +8,7 @@ sys.path.append("../")
 
 from typing import List
 from azure.storage.blob import ContainerClient
-from functions.common import Logger
+from common import Logger
 from markup import MarkupCurrency
 from models import Event
 from scrappers import post_process_event, RelaxScrapper, CityDogScrapper, TutByScrapper
@@ -57,8 +57,7 @@ def get_structured_events():
     return blob_name
 
 
-def main(mytimer: func.TimerRequest) -> None:
-    return None
+def main(msg) -> None:
     get_structured_events()
 
 
