@@ -5,6 +5,7 @@ from models import group_by_dates, Event
 
 class DuplicateEventsRemover:
     def remove_duplicated_events(self, events: List[Event]):
+        duplicate_groups = []
         events_by_dates = group_by_dates(events)
         filtered_events = []
         for dt, grouped_events in events_by_dates.items():
@@ -13,13 +14,15 @@ class DuplicateEventsRemover:
                 duplicates_list = self.detect_duplicates(grouped_events)
                 unique_events = []
                 for duplicates in duplicates_list:
+                    if len(duplicates) > 1:
+                        duplicate_groups.append(duplicates)
                     unique_event = max(duplicates, key=lambda e: len(e.to_str()))
                     unique_events.append(unique_event)
             else:
                 unique_events = grouped_events
 
             filtered_events.extend(unique_events)
-        return filtered_events
+        return filtered_events, duplicate_groups
 
     def remove_duplicate_strings(self, strings):
         if len(strings) < 2:

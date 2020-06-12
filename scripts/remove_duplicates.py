@@ -5,6 +5,7 @@ from typing import List
 from duplicate_detector import DuplicateEventsRemover
 from models import Event, EventDateRange
 
+
 def load_events(filename) -> List[Event]:
     with open(filename, "r", encoding="utf-8") as f:
         return [Event.from_json(e) for e in json.load(f)]
@@ -43,8 +44,10 @@ def remove_duplicates(folder):
 
     events = filter_events(tut + cd + relax + vk + tg)
     duplicate_detector = DuplicateEventsRemover()
-    events = duplicate_detector.remove_duplicated_events(events)
+    events, duplicates = duplicate_detector.remove_duplicated_events(events)
     save_json("%s\\events.json" % folder, events)
+    with open("%s\\duplicates.json" % folder, "w+", encoding="utf-8") as f:
+        return json.dump([[e.description for e in group] for group in duplicates if len(set([e.description for e in group])) != 1 ], f, ensure_ascii=False, indent=4)
 
 
 if __name__ == "__main__":

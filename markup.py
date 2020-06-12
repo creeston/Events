@@ -1,11 +1,10 @@
 import json
 import re
-from typing import List, Optional
-
 import regex
 import copy
 import datetime
 
+from typing import List, Optional, Tuple
 from pullenti_wrapper.langs import (set_langs, RU)
 from pullenti_wrapper.processor import (Processor, DATE, ORGANIZATION, MONEY, ADDRESS)
 from difflib import get_close_matches, SequenceMatcher
@@ -158,6 +157,13 @@ class MarkupRegister:
 
     def markup(self, text):
         return markup_by_list(self.register, text, "REGISTER", 0.9)
+
+
+class MarkupOnline:
+    online_keywords = ["online", "онлайн"]
+
+    def markup(self, text):
+        return markup_by_list(self.online_keywords, text, "ONLINE", 0.8)
 
 
 class MarkupCurrency:
@@ -330,7 +336,8 @@ class NamedEntityExtractor:
             PullEntityMarkup(),
             NatashaMarkup(),
             DeepPavlovMarkup(),
-            MarkupRegister()
+            MarkupRegister(),
+            MarkupOnline()
         ]
         self.structured_data_extractor = DataExtractor()
 
@@ -435,7 +442,7 @@ class DataExtractor:
 
         place = Place(name=",".join(places), address=address)
         title = self.get_title(text)
-        cost, is_free, is_register = self.get_metadata(text_markup)
+        cost, is_free, is_register, is_online = self.get_metadata(text_markup)
         if len(cost) > 0:
             for c in [v for tag, v in text_markup if tag == "MONEY"]:
                 for i in range(len(places)):
@@ -485,6 +492,8 @@ class DataExtractor:
             tags.append("free")
         if is_register:
             tags.append("register")
+        if is_online:
+            tags.append("online")
 
         return Event(title, text, place, event_dates, "", cost=cost, raw_dates=raw_dates, event_tags=tags)
 
@@ -662,13 +671,14 @@ class DataExtractor:
 
         return possible_title + "..."
 
-    def get_metadata(self, markups):
+    def get_metadata(self, markups) -> Tuple[List[str], bool, bool, bool]:
         is_free = len([m for m in markups if m[0] == "FREE"]) > 0
         is_register = len([m for m in markups if m[0] == "REGISTER"]) > 0
+        is_online = len([m for m in markups if m[0] == "ONLINE"]) > 0
         cost = [self.currency_markup.parse_currency(v) for tag, v in markups if tag == "MONEY"]
         cost = [c for c in cost if c and len(c) > 0]
         cost = [c for sublist in cost for c in sublist if sublist]
-        return sorted(list(set(cost))), is_free, is_register
+        return sorted(list(set(cost))), is_free, is_register, is_online
 
     @staticmethod
     def _get_common_substring(s1, s2):
