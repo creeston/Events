@@ -11,7 +11,7 @@
     {
       "type": "queue",
       "direction": "out",
-      "name": "out_msg",
+      "name": "outmsg",
       "queueName": "save-events",
       "connection": "AzureWebJobsStorage"
     }

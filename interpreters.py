@@ -223,7 +223,8 @@ def get_time(groups):
 
 # 10:00 до 14:00
 # с 10:00 до 16:00
-time_range_re = regex.compile(r"[с]?\s*(" + time_regex + r")\s*(до|" + hyphens + r")\s*(" + time_regex + ")\s*(\p{L}+)?")
+time_range_re = regex.compile(r"[с]?\s*(" + time_regex + r")\s*(до|" + hyphens + r")\s*(" +
+                              time_regex + r")\s*(\p{L}+)?")
 
 
 def get_time_range(groups):
@@ -617,7 +618,7 @@ class DateInterpreter:
 
 
 class TagMapper:
-    mapping_file = "C:\\Projects\\Research\\Events\\data\\tags\\mapping.json"
+    mapping_file = "data\\tags\\mapping.json"
 
     def __init__(self, logger):
         self.mapping = self._load_mapping(self.mapping_file)
