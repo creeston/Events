@@ -5,6 +5,7 @@ import re
 import demoji
 import traceback
 import sys
+import os
 
 from interpreters import DateInterpreter, TagMapper
 from telethon import TelegramClient
@@ -21,7 +22,7 @@ dot_re = re.compile(r"\.+")
 punctuation_characters = ['.', ',', ':', '!', '?', ';', '/']
 specials = ['•', "►"]
 hashtag_re = re.compile(r"(#\w+)")
-splash_url = "http://20.50.240.234:8050/render.html" #'http://192.168.99.100:8050/render.html'
+splash_url = os.environ['SPLASH_URL'] + "/render.html"
 
 
 class ScrapHelper:
