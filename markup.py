@@ -2,6 +2,7 @@ import json
 import re
 import regex
 import copy
+import os
 import datetime
 
 from typing import List, Optional, Tuple
@@ -109,7 +110,7 @@ def markup_by_list(entities, text, tag, cutoff=None):
 
 class PlaceMarkup:
     def __init__(self):
-        self.address_place_dict = load_json("data\\keywords\\places.json")
+        self.address_place_dict = load_json(os.environ['DATA_PATH'] + "/keywords/places.json")
         places = [places for address, places in self.address_place_dict.items()]
         self.places = list(set([p for sublist in places for p in sublist]))
 
@@ -119,7 +120,7 @@ class PlaceMarkup:
 
 class TypeMarkup:
     def __init__(self):
-        self.types = [t.lower() for t in load_json("data\\keywords\\event_types.json")]
+        self.types = [t.lower() for t in load_json(os.environ['DATA_PATH'] + "/keywords/event_types.json")]
 
     def markup(self, text):
         return markup_by_list(self.types, text, "EVENT", 0.75)
@@ -127,7 +128,7 @@ class TypeMarkup:
 
 class TypeDetector:
     def __init__(self):
-        self.types = [t.lower() for t in load_json("data\\keywords\\event_types.json")]
+        self.types = [t.lower() for t in load_json(os.environ['DATA_PATH'] + "/keywords/event_types.json")]
 
     def markup(self, text):
         entities = [e.lower() for e in self.types]

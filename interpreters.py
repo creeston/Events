@@ -1,6 +1,7 @@
 import re
 import json
 import regex
+import os
 
 from models import *
 from datetime import timedelta
@@ -618,7 +619,7 @@ class DateInterpreter:
 
 
 class TagMapper:
-    mapping_file = "data\\tags\\mapping.json"
+    mapping_file = os.environ['DATA_PATH'] + "/tags/mapping.json"
 
     def __init__(self, logger):
         self.mapping = self._load_mapping(self.mapping_file)

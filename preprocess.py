@@ -5,6 +5,7 @@ import urlextract
 class TextPreprocessor:
     def __init__(self):
         self.url_extractor = urlextract.URLExtract()
+        self.url_extractor.update()
         self.tag_regex = re.compile(r"<[^>]*>")
         self.email_regex = re.compile(r"[^\s]+@[^\s]+")
         self.number_regex = re.compile(r'\d+(?:\.\d*(?:[eE]\d+))?')
