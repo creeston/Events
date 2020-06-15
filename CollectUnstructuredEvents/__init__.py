@@ -1,8 +1,8 @@
 import asyncio
 import datetime
 import json
+import time
 import cloudinary
-import azure.functions as func
 import os
 import sys
 import logging
@@ -11,7 +11,7 @@ sys.path.append("../")
 
 from typing import List
 from azure.storage.blob import ContainerClient
-
+from azure.storage.queue import QueueService
 from cloudinary import uploader
 from classifier import TypeClassifier
 from configuration import cloudinary_config
@@ -30,6 +30,8 @@ container_name = "raweventdata"
 service = ContainerClient.from_connection_string(connection_string, container_name)
 model_blob = "classifier/export.pkl"
 model_service = ContainerClient.from_connection_string(connection_string, "model")
+
+queue_client = QueueService(connection_string=connection_string, is_emulated=True)
 
 
 def parse_events(events: List[UnstructuredEvent], classifier, extractor):
@@ -56,6 +58,18 @@ def download_model() -> str:
     return model_dir
 
 
+def get_tg_code():
+    logging.info("Telegram code needs to be input. Put it into tgcode queue")
+    while True:
+        messages = queue_client.get_messages("tgcode", num_messages=1)
+        if len(messages) == 0:
+            time.sleep(10)
+        else:
+            content = messages[0].content
+            queue_client.delete_message('tgcode', messages[0].id, messages[0].pop_receipt)
+            return content
+
+
 async def get_unstructured_events():
     extractor = NamedEntityExtractor()
     logging.info("Start downloading model")
@@ -80,7 +94,7 @@ async def get_unstructured_events():
 
     logging.info("Start getting TG events")
     tg_events = []
-    async for event in TelegramEventFetcher().fetch_events():
+    async for event in TelegramEventFetcher().fetch_events(code_callback=get_tg_code):
         tg_events.append(event)
 
     logging.info("Finished getting TG events")
@@ -91,7 +105,6 @@ async def get_unstructured_events():
     service.upload_blob(blob_name + "\\tg.json", content)
 
     logging.info("Finished parsing TG events")
-
 
 
 def main(msg) -> None:

@@ -1016,29 +1016,30 @@ class TelegramEventFetcher:
     bold_re = re.compile(r"(\*\*([^*]*)\*\*)")
     italic_re = re.compile(r"(__([^_]*)__)")
 
-    async def fetch_events(self):
-        async with TelegramClient('anon', self.api_id, self.api_hash) as client:
-            for channel_id in self.channels:
-                channel = await client.get_entity(channel_id)
-                channel_name = channel.username
-                messages = await client.get_messages(channel, limit=2000)
-                for m in messages:
-                    raw_text = m.raw_text
-                    if not raw_text:
-                        continue
+    async def fetch_events(self, code_callback=None):
+        client = TelegramClient('anon', self.api_id, self.api_hash)
+        await client.start(vk_credentials["phone_num"], code_callback=code_callback)
+        for channel_id in self.channels:
+            channel = await client.get_entity(channel_id)
+            channel_name = channel.username
+            messages = await client.get_messages(channel, limit=2000)
+            for m in messages:
+                raw_text = m.raw_text
+                if not raw_text:
+                    continue
 
-                    title = None
-                    for value, inner_value in self.bold_re.findall(m.text):
-                        title = inner_value.replace('\n', ' ').strip()
-                        break
+                title = None
+                for value, inner_value in self.bold_re.findall(m.text):
+                    title = inner_value.replace('\n', ' ').strip()
+                    break
 
-                    text = clean_text(raw_text)
-                    url = "https://t.me/%s/%s" % (channel_name, m.id)
-                    image_bytes = None
-                    if 'MessageMediaPhoto' in str(type(m.media)):
-                        image_bytes = await client.download_media(m, file=bytes, thumb=-1)
+                text = clean_text(raw_text)
+                url = "https://t.me/%s/%s" % (channel_name, m.id)
+                image_bytes = None
+                if 'MessageMediaPhoto' in str(type(m.media)):
+                    image_bytes = await client.download_media(m, file=bytes, thumb=-1)
 
-                    yield UnstructuredEvent(text, url, m.date, title=title, poster_bytes=image_bytes)
+                yield UnstructuredEvent(text, url, m.date, title=title, poster_bytes=image_bytes)
 
 
 class VkEventFetcher:

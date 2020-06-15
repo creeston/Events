@@ -1,6 +1,7 @@
 import fastai.text as ftext
 import pandas as pd
 import random
+import os
 
 from sklearn.model_selection import train_test_split
 from preprocess import TextPreprocessor
@@ -35,7 +36,8 @@ class ClassifierTrainer:
         self.logger = logger
         self.preprocessor = TextPreprocessor()
 
-    def train_classifier_model(self, raw_data, pretrained_model, output_path):
+    def train_classifier_model(self, raw_data, pretrained_model, directory):
+        self.logger.log_info("Prepare training and testing data")
         df_train, df_val, df_test = self._prepare_train_data(raw_data)
         tokenizer = ftext.Tokenizer(lang='xx')
         data_lm = ftext.TextLMDataBunch.from_df(
@@ -49,17 +51,18 @@ class ClassifierTrainer:
 
         self.logger.log_info("Start training language model")
         language_model_learner = self._create_language_model_learner(data_lm, pretrained_model)
-        encoder_name = self._train_language_model(language_model_learner)
+        encoder_name = self._train_language_model(language_model_learner, directory)
 
-        self.logger.log_info("Start classifier")
+        self.logger.log_info("Start training classifier")
         classifier_learner = self._create_classifier_learner(data_lm, df_train, df_val, tokenizer, encoder_name)
         self._train_classifier(classifier_learner)
 
         self.logger.log_info("Export model")
+        output_path = os.path.join(directory, "model")
         classifier_learner.export(output_path)
         learner_new = ftext.load_learner(output_path)
         label_precision = self._evaluate_model(df_test, learner_new)
-        return label_precision
+        return label_precision, output_path
 
     def _prepare_train_data(self, raw_data):
         preprocessed_data = [(self.preprocessor.preprocess_text(d[0]), d[1]) for d in raw_data]
@@ -86,7 +89,7 @@ class ClassifierTrainer:
                                                 config=config, pretrained_fnames=pretrained_model, drop_mult=0.3)
         return learn_lm
 
-    def _train_language_model(self, learn_lm):
+    def _train_language_model(self, learn_lm, directory):
         # comment to speed up testing
         # learn_lm.freeze()
         # learn_lm.fit_one_cycle(3, 1e-2, moms=(0.8, 0.7))
@@ -94,7 +97,7 @@ class ClassifierTrainer:
         # learn_lm.unfreeze()
         learn_lm.fit_one_cycle(5, 1e-3, moms=(0.8, 0.7))
 
-        encoder_name = 'ft_enc_events'
+        encoder_name = os.path.join(directory, 'ft_enc_events')
         learn_lm.save_encoder(encoder_name)
         return encoder_name
 

@@ -61,19 +61,21 @@ def main(msg) -> None:
     data = load_data()
     logging.info("Start downloading base model")
     tempdir = mkdtemp()
+    export_path = None
     itos_file, weight_file, enc_weight_file = download_model(tempdir)
     try:
         weights_pretrained = os.path.join(tempdir, 'lm_5_ep_lr2-3_5_stlr')
         itos_pretrained = os.path.join(tempdir, 'itos')
         pretrained_data = (weights_pretrained, itos_pretrained)
         logging.info("Start training")
-        train_model = os.path.abspath("trained_model")
-        result = trainer.train_classifier_model(data, pretrained_data, train_model)
+        result, export_path = trainer.train_classifier_model(data, pretrained_data, tempdir)
         logging.info("Training finished " + str(result))
     finally:
         os.remove(itos_file)
         os.remove(weight_file)
         os.remove(enc_weight_file)
+        if export_path:
+            os.remove(export_path)
         os.rmdir(tempdir)
 
 
