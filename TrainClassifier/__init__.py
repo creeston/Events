@@ -1,23 +1,15 @@
 import logging
 import azure.functions as func
 import os
-from azure.storage.blob import ContainerClient
-from azure.cosmosdb.table.tableservice import TableService
+
 from trainers import labels, ClassifierTrainer
 from common import Logger
 from tempfile import mkdtemp
 
 
-connection_string = os.environ['AzureWebJobsStorage']
-service = TableService(connection_string=connection_string, is_emulated=True)
-
-table = "eventClassificationTrainingData"
-model_service = ContainerClient.from_connection_string(connection_string, "model")
-
-
 def load_data(training_data):
     raw_data = []
-    for entity in training_data:# service.query_entities(table):
+    for entity in training_data:
         text = entity['Text']
         event_labels = entity['Labels'].split(',')
         label_ids = [labels.index(label) for label in event_labels if label in labels]
@@ -69,4 +61,4 @@ def main(msg,
 
 
 if __name__ == "__main__":
-    main(None, None, None, None)
+    main(None, None, None, None, None)
