@@ -7,6 +7,30 @@
       "direction": "in",
       "queueName": "train",
       "connection": "AzureWebJobsStorage"
+    },
+    {
+      "name": "itos_blob",
+      "type": "blob",
+      "dataType": "binary",
+      "path": "ULMFit/itos.pkl",
+      "connection": "AzureWebJobsStorage",
+      "direction": "in"
+    },
+    {
+      "name": "enc_weight_blob",
+      "type": "blob",
+      "dataType": "binary",
+      "path": "ULMFit/lm_5_ep_lr2-3_5_stlr_enc.pth",
+      "connection": "AzureWebJobsStorage",
+      "direction": "in"
+    },
+    {
+      "name": "weight_blob",
+      "type": "blob",
+      "dataType": "binary",
+      "path": "ULMFit/lm_5_ep_lr2-3_5_stlr.pth",
+      "connection": "AzureWebJobsStorage",
+      "direction": "in"
     }
   ]
 }
