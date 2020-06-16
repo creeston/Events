@@ -9,7 +9,7 @@
       "connection": "AzureWebJobsStorage"
     },
     {
-      "name": "itos_blob",
+      "name": "itos",
       "type": "blob",
       "dataType": "binary",
       "path": "model/ULMFit/itos.pkl",
@@ -17,7 +17,7 @@
       "direction": "in"
     },
     {
-      "name": "enc_weight_blob",
+      "name": "encweight",
       "type": "blob",
       "dataType": "binary",
       "path": "model/ULMFit/lm_5_ep_lr2-3_5_stlr_enc.pth",
@@ -25,10 +25,17 @@
       "direction": "in"
     },
     {
-      "name": "weight_blob",
+      "name": "weight",
       "type": "blob",
       "dataType": "binary",
       "path": "model/ULMFit/lm_5_ep_lr2-3_5_stlr.pth",
+      "connection": "AzureWebJobsStorage",
+      "direction": "in"
+    },
+    {
+      "name": "data",
+      "type": "table",
+      "tableName": "eventClassificationTrainingData",
       "connection": "AzureWebJobsStorage",
       "direction": "in"
     }
