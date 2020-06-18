@@ -7,10 +7,6 @@ import os
 import sys
 import logging
 
-stream = os.popen("python -m deeppavlov install ner_ontonotes_bert_mult")
-output = stream.read()
-logging.info(output)
-
 sys.path.append("../")
 
 from typing import List
