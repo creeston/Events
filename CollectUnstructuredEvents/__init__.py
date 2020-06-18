@@ -7,10 +7,8 @@ import os
 import sys
 import logging
 
-try:
-    import bert_dp
-except:
-    os.system("python -m deeppavlov install ner_ontonotes_bert_mult")
+exit_code = os.system("python -m deeppavlov install ner_ontonotes_bert_mult")
+print("Command finished with code: %s" % str(exit_code))
 
 sys.path.append("../")
 
