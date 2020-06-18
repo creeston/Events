@@ -7,8 +7,9 @@ import os
 import sys
 import logging
 
-exit_code = os.system("python -m deeppavlov install ner_ontonotes_bert_mult")
-print("Command finished with code: %s" % str(exit_code))
+stream = os.popen("python -m deeppavlov install ner_ontonotes_bert_mult")
+output = stream.read()
+logging.info(output)
 
 sys.path.append("../")
 
