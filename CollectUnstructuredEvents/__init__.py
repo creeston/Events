@@ -7,6 +7,11 @@ import os
 import sys
 import logging
 
+try:
+    import bert_dp
+except:
+    os.system("python -m deeppavlov install ner_ontonotes_bert_mult")
+
 sys.path.append("../")
 
 from typing import List
