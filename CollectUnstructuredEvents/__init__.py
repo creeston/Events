@@ -8,7 +8,10 @@ import sys
 import logging
 import subprocess
 
-subprocess.check_call([sys.executable, "-m", "deeppavlov", "install", "ner_ontonotes_bert_mult"])
+try:
+    subprocess.check_call([sys.executable, "-m", "deeppavlov", "install", "ner_ontonotes_bert_mult"])
+except subprocess.CalledProcessError as e:
+    raise RuntimeError("command '{}' return with error (code {}): {}".format(e.cmd, e.returncode, e.output))
 
 sys.path.append("../")
 
