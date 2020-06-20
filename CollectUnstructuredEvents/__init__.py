@@ -6,6 +6,9 @@ import cloudinary
 import os
 import sys
 import logging
+import subprocess
+
+subprocess.check_call([sys.executable, "-m", "deeppavlov", "install", "ner_ontonotes_bert_mult"])
 
 sys.path.append("../")
 
