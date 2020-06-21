@@ -7,7 +7,7 @@ import os
 import sys
 import logging
 
-sys.path.append('/home/site/myvenv/lib/python3.7/site-packages')
+sys.path.append('/home/site/myenv/lib/python3.7/site-packages')
 sys.path.append("../")
 
 from typing import List
