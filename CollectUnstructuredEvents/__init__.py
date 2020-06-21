@@ -71,37 +71,41 @@ async def get_unstructured_events():
     logging.info("Start downloading model")
     tempdir = mkdtemp()
     model_file_path = download_model(tempdir)
-    logging.info("Model was downloaded to %s" % model_file_path)
-    classifier = TypeClassifier(model_file_path)
+    try:
+        logging.info("Model was downloaded to %s" % model_file_path)
+        classifier = TypeClassifier(model_file_path)
 
-    today = datetime.datetime.now()
-    blob_name = "%s_%s_%s" % (today.year, today.month, today.day)
+        today = datetime.datetime.now()
+        blob_name = "%s_%s_%s" % (today.year, today.month, today.day)
 
-    logging.info("Start getting VK events")
+        logging.info("Start getting VK events")
 
-    vk_events = list(VkEventFetcher().fetch_events())
+        vk_events = list(VkEventFetcher().fetch_events())
 
-    logging.info("Finish getting VK events")
-    logging.info("Start parsing VK events")
+        logging.info("Finish getting VK events")
+        logging.info("Start parsing VK events")
 
-    vk_parsed_events = list(parse_events(vk_events, classifier, extractor))
-    content = json.dumps([e.to_json() for e in vk_parsed_events if e], ensure_ascii=False, indent=4)
-    service.upload_blob(blob_name + "\\vk.json", content)
-    logging.info("Finish parsing VK events")
+        vk_parsed_events = list(parse_events(vk_events, classifier, extractor))
+        content = json.dumps([e.to_json() for e in vk_parsed_events if e], ensure_ascii=False, indent=4)
+        service.upload_blob(blob_name + "\\vk.json", content)
+        logging.info("Finish parsing VK events")
 
-    logging.info("Start getting TG events")
-    tg_events = []
-    async for event in TelegramEventFetcher().fetch_events(code_callback=get_tg_code):
-        tg_events.append(event)
+        logging.info("Start getting TG events")
+        tg_events = []
+        async for event in TelegramEventFetcher().fetch_events(code_callback=get_tg_code):
+            tg_events.append(event)
 
-    logging.info("Finished getting TG events")
-    logging.info("Start parsing TG events")
+        logging.info("Finished getting TG events")
+        logging.info("Start parsing TG events")
 
-    tg_parsed_events = list(parse_events(tg_events, classifier, extractor))
-    content = json.dumps([e.to_json() for e in tg_parsed_events if e], ensure_ascii=False, indent=4)
-    service.upload_blob(blob_name + "\\tg.json", content)
+        tg_parsed_events = list(parse_events(tg_events, classifier, extractor))
+        content = json.dumps([e.to_json() for e in tg_parsed_events if e], ensure_ascii=False, indent=4)
+        service.upload_blob(blob_name + "\\tg.json", content)
 
-    logging.info("Finished parsing TG events")
+        logging.info("Finished parsing TG events")
+    finally:
+        os.path.join(model_file_path, "export.pkl")
+        os.rmdir(tempdir)
 
 
 def main(msg) -> None:
