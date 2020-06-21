@@ -2,6 +2,8 @@ import asyncio
 import datetime
 import json
 import time
+from tempfile import mkdtemp
+
 import cloudinary
 import os
 import sys
@@ -44,16 +46,9 @@ def parse_events(events: List[UnstructuredEvent], classifier, extractor):
             continue
 
 
-def download_model() -> str:
-    model_path = "temp\\model\\export.pkl"
-    model_dir = "temp\\model"
-    if os.path.exists(model_dir):
-        if os.path.exists(model_path):
-            os.remove(model_path)
-    else:
-        if not os.path.exists("temp"):
-            os.mkdir("temp")
-        os.mkdir(model_dir)
+def download_model(tempdir) -> str:
+    model_dir = os.path.join(tempdir, "model")
+    model_path = os.path.join(model_dir, "export.pkl")
     with open(model_path, "wb") as f:
         model_service.download_blob(model_blob).readinto(f)
     return model_dir
@@ -74,7 +69,8 @@ def get_tg_code():
 async def get_unstructured_events():
     extractor = NamedEntityExtractor()
     logging.info("Start downloading model")
-    model_file_path = download_model()
+    tempdir = mkdtemp()
+    model_file_path = download_model(tempdir)
     logging.info("Model was downloaded to %s" % model_file_path)
     classifier = TypeClassifier(model_file_path)
 
