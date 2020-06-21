@@ -49,6 +49,7 @@ def parse_events(events: List[UnstructuredEvent], classifier, extractor):
 def download_model(tempdir) -> str:
     model_dir = os.path.join(tempdir, "model")
     model_path = os.path.join(model_dir, "export.pkl")
+    os.mkdir(model_dir)
     with open(model_path, "wb") as f:
         model_service.download_blob(model_blob).readinto(f)
     return model_dir
@@ -104,7 +105,8 @@ async def get_unstructured_events():
 
         logging.info("Finished parsing TG events")
     finally:
-        os.path.join(model_file_path, "export.pkl")
+        os.remove(os.path.join(model_file_path, "export.pkl"))
+        os.rmdir(model_file_path)
         os.rmdir(tempdir)
 
 
