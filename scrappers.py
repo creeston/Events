@@ -1016,8 +1016,11 @@ class TelegramEventFetcher:
     bold_re = re.compile(r"(\*\*([^*]*)\*\*)")
     italic_re = re.compile(r"(__([^_]*)__)")
 
+    def __init__(self, session_folder):
+        self.session_file = os.path.join(session_folder, 'anon')
+
     async def fetch_events(self, code_callback=None):
-        client = TelegramClient('anon', self.api_id, self.api_hash)
+        client = TelegramClient(self.session_file, self.api_id, self.api_hash)
         await client.start(vk_credentials["phone_num"], code_callback=code_callback)
         for channel_id in self.channels:
             channel = await client.get_entity(channel_id)
@@ -1050,8 +1053,11 @@ class VkEventFetcher:
 
     stop_words = ["победитель", "выиграй", "выигрывай", "выигрывай"]
 
+    def __init__(self, config_storage_folder):
+        self.config_path = os.path.join(config_storage_folder, "vk_config.v2.json")
+
     def fetch_events(self) -> List[UnstructuredEvent]:
-        vk_session = vk_api.VkApi(self.phone_num, self.password)
+        vk_session = vk_api.VkApi(self.phone_num, self.password, config_filename=self.config_path)
         vk_session.auth()
         api = vk_session.get_api()
         for group_id in self.vk_communities:

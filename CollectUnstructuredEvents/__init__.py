@@ -81,7 +81,7 @@ async def get_unstructured_events():
 
         logging.info("Start getting VK events")
 
-        vk_events = list(VkEventFetcher().fetch_events())
+        vk_events = list(VkEventFetcher("/home/site/myenv").fetch_events())
 
         logging.info("Finish getting VK events")
         logging.info("Start parsing VK events")
@@ -93,7 +93,7 @@ async def get_unstructured_events():
 
         logging.info("Start getting TG events")
         tg_events = []
-        async for event in TelegramEventFetcher().fetch_events(code_callback=get_tg_code):
+        async for event in TelegramEventFetcher("/home/site/myenv").fetch_events(code_callback=get_tg_code):
             tg_events.append(event)
 
         logging.info("Finished getting TG events")
