@@ -1019,7 +1019,7 @@ class TelegramEventFetcher:
     italic_re = re.compile(r"(__([^_]*)__)")
 
     def __init__(self, session_folder):
-        self.session_file = os.path.join(session_folder, 'anon')
+        self.session_file = os.path.join(session_folder, 'get_events')
 
     async def fetch_events(self, code_callback=None):
         client = TelegramClient(self.session_file, self.api_id, self.api_hash)

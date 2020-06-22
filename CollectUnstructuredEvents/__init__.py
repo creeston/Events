@@ -80,30 +80,30 @@ async def get_unstructured_events():
         blob_name = "%s_%s_%s" % (today.year, today.month, today.day)
 
         logging.info("Start getting VK events")
+        vk_blob_name = blob_name + "\\vk.json"
+        existing_blobs = service.list_blobs(vk_blob_name)
+        if len(existing_blobs) == 0:
+            vk_events = list(VkEventFetcher("/home/site/myenv").fetch_events())
+            logging.info("Finish getting VK events")
+            logging.info("Start parsing VK events")
+            vk_parsed_events = list(parse_events(vk_events, classifier, extractor))
+            content = json.dumps([e.to_json() for e in vk_parsed_events if e], ensure_ascii=False, indent=4)
+            service.upload_blob(blob_name, content)
+            logging.info("Finish parsing VK events")
 
-        vk_events = list(VkEventFetcher("/home/site/myenv").fetch_events())
-
-        logging.info("Finish getting VK events")
-        logging.info("Start parsing VK events")
-
-        vk_parsed_events = list(parse_events(vk_events, classifier, extractor))
-        content = json.dumps([e.to_json() for e in vk_parsed_events if e], ensure_ascii=False, indent=4)
-        service.upload_blob(blob_name + "\\vk.json", content)
-        logging.info("Finish parsing VK events")
-
-        logging.info("Start getting TG events")
-        tg_events = []
-        async for event in TelegramEventFetcher("/home/site/myenv").fetch_events(code_callback=get_tg_code):
-            tg_events.append(event)
-
-        logging.info("Finished getting TG events")
-        logging.info("Start parsing TG events")
-
-        tg_parsed_events = list(parse_events(tg_events, classifier, extractor))
-        content = json.dumps([e.to_json() for e in tg_parsed_events if e], ensure_ascii=False, indent=4)
-        service.upload_blob(blob_name + "\\tg.json", content)
-
-        logging.info("Finished parsing TG events")
+        tg_blob_name = blob_name + "\\tg.json"
+        existing_blobs = service.list_blobs(tg_blob_name)
+        if len(existing_blobs) == 0:
+            logging.info("Start getting TG events")
+            tg_events = []
+            async for event in TelegramEventFetcher("/home/site/myenv").fetch_events(code_callback=get_tg_code):
+                tg_events.append(event)
+            logging.info("Finished getting TG events")
+            logging.info("Start parsing TG events")
+            tg_parsed_events = list(parse_events(tg_events, classifier, extractor))
+            content = json.dumps([e.to_json() for e in tg_parsed_events if e], ensure_ascii=False, indent=4)
+            service.upload_blob(tg_blob_name, content)
+            logging.info("Finished parsing TG events")
     finally:
         os.remove(os.path.join(model_file_path, "export.pkl"))
         os.rmdir(model_file_path)
