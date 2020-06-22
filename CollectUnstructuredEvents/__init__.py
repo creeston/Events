@@ -88,7 +88,7 @@ async def get_unstructured_events():
             logging.info("Start parsing VK events")
             vk_parsed_events = list(parse_events(vk_events, classifier, extractor))
             content = json.dumps([e.to_json() for e in vk_parsed_events if e], ensure_ascii=False, indent=4)
-            service.upload_blob(blob_name, content)
+            service.upload_blob(vk_blob_name, content)
             logging.info("Finish parsing VK events")
 
         tg_blob_name = blob_name + "\\tg.json"
