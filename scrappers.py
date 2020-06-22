@@ -7,6 +7,8 @@ import traceback
 import sys
 import os
 
+demoji.download_codes()
+
 from interpreters import DateInterpreter, TagMapper
 from telethon import TelegramClient
 from configuration import tg_credentials, vk_credentials
