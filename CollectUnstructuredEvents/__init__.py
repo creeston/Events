@@ -82,7 +82,7 @@ async def get_unstructured_events():
         logging.info("Start getting VK events")
         vk_blob_name = blob_name + "\\vk.json"
         existing_blobs = service.list_blobs(vk_blob_name)
-        if len(existing_blobs) == 0:
+        if len(list(existing_blobs)) == 0:
             vk_events = list(VkEventFetcher("/home/site/myenv").fetch_events())
             logging.info("Finish getting VK events")
             logging.info("Start parsing VK events")
@@ -93,7 +93,7 @@ async def get_unstructured_events():
 
         tg_blob_name = blob_name + "\\tg.json"
         existing_blobs = service.list_blobs(tg_blob_name)
-        if len(existing_blobs) == 0:
+        if len(list(existing_blobs)) == 0:
             logging.info("Start getting TG events")
             tg_events = []
             async for event in TelegramEventFetcher("/home/site/myenv").fetch_events(code_callback=get_tg_code):
