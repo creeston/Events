@@ -1027,7 +1027,7 @@ class TelegramEventFetcher:
         for channel_id in self.channels:
             channel = await client.get_entity(channel_id)
             channel_name = channel.username
-            messages = await client.get_messages(channel, limit=2000)
+            messages = await client.get_messages(channel, limit=200)
             for m in messages:
                 raw_text = m.raw_text
                 if not raw_text:
@@ -1063,7 +1063,7 @@ class VkEventFetcher:
         vk_session.auth()
         api = vk_session.get_api()
         for group_id in self.vk_communities:
-            for offset in range(15):
+            for offset in range(2):
                 response = api.wall.get(owner_id=-group_id, count=100, filter='owner', offset=offset * 100)
                 posts = response['items']
                 for post in posts:
