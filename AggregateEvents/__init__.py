@@ -74,4 +74,4 @@ def main(msg, outmsg: func.Out[str]) -> None:
     events_blob = remove_duplicates()
     if not events_blob:
         return
-    msg.set(events_blob)
+    outmsg.set(events_blob)
