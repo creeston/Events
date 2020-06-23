@@ -64,7 +64,7 @@ def remove_duplicates():
 
     events = filter_events(events)
     duplicate_detector = DuplicateEventsRemover()
-    events = duplicate_detector.remove_duplicated_events(events)
+    events = duplicate_detector.remove_duplicated_events(events)[0]
     events_blob = "%s\\events.json" % blob_folder
     save_events(events, "%s\\events.json" % blob_folder)
     return events_blob
